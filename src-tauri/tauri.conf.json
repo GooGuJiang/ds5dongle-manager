@@ -28,7 +28,8 @@
     "active": true,
     "targets": "all",
     "icon": [
-      "icons/pwa-icon.png"
+      "icons/pwa-icon.png",
+      "icons/icon.ico"
     ]
   }
 }
