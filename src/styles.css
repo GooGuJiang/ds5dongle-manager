@@ -1,0 +1,15 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@import "./styles/fonts.css";
+@import "./styles/theme.css";
+@import "./styles/base.css";
+@import "./styles/layout.css";
+@import "./styles/header.css";
+@import "./styles/device.css";
+@import "./styles/animations.css";
+@import "./styles/settings.css";
+@import "./styles/update-dialogs.css";
+@import "./styles/footer.css";
+@import "./styles/config.css";
+@import "./styles/responsive.css";

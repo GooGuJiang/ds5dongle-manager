@@ -1,0 +1,111 @@
+﻿.firmware-update-dialog {
+  color: var(--foreground);
+}
+
+.pwa-update-dialog,
+.firmware-update-body {
+  color: var(--foreground);
+}
+
+.pwa-update-body,
+.firmware-update-body {
+  display: grid;
+  gap: 1rem;
+}
+
+.pwa-update-version-grid,
+.firmware-update-version-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.pwa-update-version-grid div,
+.pwa-update-notes,
+.pwa-update-assets,
+.firmware-update-version-grid div,
+.firmware-update-notes,
+.firmware-update-assets {
+  min-width: 0;
+  padding: 0.85rem;
+  background: var(--color-background-card-6);
+  border: 1px solid var(--app-panel-border);
+  border-radius: 0.5rem;
+}
+
+.pwa-update-version-grid dt,
+.pwa-update-notes h3,
+.pwa-update-assets h3,
+.firmware-update-version-grid dt,
+.firmware-update-notes h3,
+.firmware-update-assets h3 {
+  margin: 0 0 0.35rem;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pwa-update-version-grid dd,
+.firmware-update-version-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+}
+
+.pwa-update-notes pre,
+.firmware-update-notes pre {
+  max-height: min(30vh, 18rem);
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--foreground);
+  font-family: var(--app-font-family);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.pwa-update-highlights,
+.firmware-update-highlights {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.pwa-update-notice,
+.firmware-update-notice {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  color: var(--app-warning);
+  background: var(--app-warning-bg);
+  border: 1px solid var(--app-warning-border);
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.pwa-update-asset-list,
+.firmware-update-asset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.pwa-update-asset-list a,
+.pwa-update-dialog [data-slot="dialog-footer"] a,
+.firmware-update-asset-list a,
+.firmware-update-dialog [data-slot="dialog-footer"] a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+@media (max-width: 640px) {
+  .pwa-update-version-grid,
+  .firmware-update-version-grid {
+    grid-template-columns: 1fr;
+  }
+}

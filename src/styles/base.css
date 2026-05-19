@@ -1,0 +1,112 @@
+﻿@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+html {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--app-surface);
+  color: var(--foreground);
+  font-family: var(--app-font-family);
+  font-size: 14px;
+  -webkit-app-region: no-drag;
+}
+
+*[data-tauri-drag-region] {
+  app-region: drag;
+  -webkit-app-region: drag;
+}
+
+button,
+a,
+input,
+select,
+textarea,
+[role="button"],
+[data-no-drag] {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+@media (max-width: 960px), (max-height: 760px) {
+  html {
+    font-size: 13px;
+  }
+}
+
+@media (min-width: 1440px) and (min-height: 900px) {
+  html {
+    font-size: 15px;
+  }
+}
+
+html[data-theme-transition="true"],
+html[data-theme-transition="true"] *,
+html[data-theme-transition="true"] *::before,
+html[data-theme-transition="true"] *::after {
+  transition:
+    background-color 320ms ease,
+    background 320ms ease,
+    border-color 320ms ease,
+    color 320ms ease,
+    fill 320ms ease,
+    stroke 320ms ease,
+    box-shadow 320ms ease !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-transition="true"],
+  html[data-theme-transition="true"] *,
+  html[data-theme-transition="true"] *::before,
+  html[data-theme-transition="true"] *::after {
+    transition: none !important;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  min-width: 320px;
+  min-height: 100vh;
+  min-height: 100svh;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  color: var(--foreground);
+  font-family: var(--app-font-family);
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.375rem;
+  -webkit-app-region: no-drag;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 9%, transparent), transparent 36rem),
+    var(--app-surface);
+}
+
+button,
+input {
+  font: inherit;
+  font-weight: 400;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}

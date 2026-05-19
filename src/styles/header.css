@@ -1,0 +1,444 @@
+﻿.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: calc(100% + clamp(24px, 3.6vw, 44px));
+  min-height: var(--app-header-height);
+  padding: 7px 140px 7px 2px;
+  margin: 0 calc(clamp(12px, 1.8vw, 22px) * -1) clamp(6px, 1vh, 12px);
+  background: var(--card);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.app-shell.settings-mode .app-header {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  width: 100%;
+  padding-right: 2px;
+  padding-right: 140px;
+  padding-left: 2px;
+  margin-bottom: 0;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  gap: 6px;
+  margin-left: 12px;
+  min-width: 0;
+}
+
+.header-drag-spacer {
+  align-self: stretch;
+  flex: 1 1 auto;
+  min-width: 24px;
+}
+
+.brand-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  transform: translateX(0);
+  transition: transform 180ms ease;
+}
+
+.brand-update-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 27px;
+  height: 27px;
+  flex: 0 0 auto;
+  align-self: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 0 8px;
+  color: #16a34a;
+  cursor: pointer;
+  background: rgb(34 197 94 / 14%);
+  border: 1px solid rgb(34 197 94 / 34%);
+  border-radius: 999px;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.brand-update-button span {
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.brand-update-button:hover,
+.brand-update-button:focus-visible {
+  color: #15803d;
+  background: rgb(34 197 94 / 22%);
+  border-color: rgb(34 197 94 / 52%);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.dark .brand-update-button {
+  color: #4ade80;
+  background: rgb(34 197 94 / 14%);
+  border-color: rgb(74 222 128 / 30%);
+}
+
+.dark .brand-update-button:hover,
+.dark .brand-update-button:focus-visible {
+  color: #86efac;
+  background: rgb(34 197 94 / 22%);
+  border-color: rgb(74 222 128 / 48%);
+}
+
+.brand-lockup:has(.header-back-motion-slot) .brand-main {
+  transform: translateX(4px);
+}
+
+.app-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border-radius: 24%;
+}
+
+.header-back-motion-slot {
+  display: inline-flex;
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+
+.header-back-button {
+  position: relative;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  margin-left: 0;
+  color: var(--foreground);
+  border-radius: 999px;
+}
+
+.header-actions,
+.header-device-control-bar,
+.header-device-actions,
+.header-action-slot,
+.header-software-settings-button,
+.language-switcher,
+.theme-switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-action-slot {
+  flex: 0 0 auto;
+}
+
+.header-software-settings-button {
+  width: 32px;
+  height: 32px;
+  justify-content: center;
+  color: var(--muted-foreground);
+  border-radius: 999px;
+}
+
+.header-software-settings-button:hover,
+.header-software-settings-button:focus-visible {
+  color: var(--foreground);
+  background: var(--muted);
+}
+
+.software-settings-dialog {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.software-settings-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px;
+  background: var(--muted);
+  border-radius: 12px;
+}
+
+.software-settings-option strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--foreground);
+  font-size: 0.95rem;
+}
+
+.software-settings-option p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.header-actions {
+  flex: 0 1 auto;
+  max-width: calc(100% - 230px);
+  min-width: 0;
+  margin-left: auto;
+  padding-right: 0;
+  overflow: hidden;
+}
+
+.window-controls {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: stretch;
+  height: var(--app-header-height);
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.window-control-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  padding: 0;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: 0;
+  outline: none;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
+}
+
+.window-control-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.window-control-button:hover,
+.window-control-button:focus-visible {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--muted) 76%, transparent);
+}
+
+.window-control-button.is-close:hover,
+.window-control-button.is-close:focus-visible {
+  color: #fff;
+  background: #e81123;
+}
+
+.app-shell:not(.settings-mode) .header-actions {
+  gap: 6px;
+  padding-right: 2px;
+  transform: translateX(0);
+}
+
+.app-shell:not(.settings-mode) .theme-switcher [data-slot="tabs-list"] {
+  width: 116px;
+}
+
+.app-shell:not(.settings-mode) .language-switcher [data-slot="tabs-list"] {
+  width: 116px;
+}
+
+.header-device-actions {
+  gap: 4px;
+  padding-right: 2px;
+}
+
+.header-device-control-motion-slot {
+  display: flex;
+  flex: 0 0 auto;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  transform: translateX(0);
+  will-change: max-width, opacity;
+}
+
+.header-device-control-motion-slot.is-spacer {
+  min-width: 0;
+  margin-left: 0;
+}
+
+.header-device-control-bar {
+  flex: 0 0 auto;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 32px;
+  margin-left: 0;
+  margin-right: 0;
+  padding: 3px;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border: 0;
+  border-radius: 8px;
+  box-shadow: none;
+  will-change: transform, opacity;
+}
+
+.header-device-action-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+}
+
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(34vw, 360px);
+  min-height: 30px;
+  padding: 4px 8px;
+  color: var(--muted-foreground);
+  background: transparent;
+  border-radius: 999px;
+  font-size: 0.92rem;
+  line-height: 1.2;
+}
+
+.header-status-label {
+  color: var(--app-label);
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+.header-status strong {
+  color: var(--foreground);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.header-status-error,
+.header-status-warning {
+  overflow: hidden;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-status-error {
+  color: var(--app-error);
+}
+
+.header-status-warning {
+  color: var(--app-warning);
+}
+
+.language-switcher,
+.theme-switcher {
+  color: var(--muted-foreground);
+}
+
+.eyebrow,
+.label {
+  color: var(--app-label);
+  font-size: 0.875rem;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  line-height: 1.25rem;
+  text-align: justify;
+  word-break: break-word;
+  text-transform: uppercase;
+}
+
+h1,
+h2 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+h1 {
+  color: var(--color-text-head-100);
+  font-size: clamp(1.28rem, 2.3vh, 1.58rem);
+  line-height: 1.25rem;
+}
+
+h2 {
+  color: var(--color-text-head-100);
+  font-size: 1.16rem;
+  line-height: 1.35rem;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 11px;
+  color: var(--muted-foreground);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-weight: 400;
+  font-size: 0.92rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+
+.status-pill.connected {
+  color: var(--primary);
+  border-color: var(--border);
+  background: var(--secondary);
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  margin-bottom: clamp(8px, 1.4vh, 12px);
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid;
+  font-weight: 400;
+  font-size: 0.92rem;
+  line-height: 1.25rem;
+}
+
+.notice.error {
+  color: var(--app-error);
+  background: color-mix(in srgb, var(--destructive) 10%, var(--card));
+  border-color: color-mix(in srgb, var(--destructive) 28%, var(--border));
+}
+
+.notice.warning {
+  color: var(--app-warning);
+  background: var(--app-warning-bg);
+  border-color: var(--app-warning-border);
+}
+
+.notice button {
+  margin-left: auto;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  font-weight: 400;
+}
+
+.app-toast {
+  min-width: min(360px, calc(100vw - 32px));
+  font-weight: 400;
+}

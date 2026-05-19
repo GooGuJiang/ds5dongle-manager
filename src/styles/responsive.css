@@ -1,0 +1,326 @@
+﻿@media (min-width: 861px) {
+  .config-panel {
+    max-height: calc(100svh - var(--app-header-height) - clamp(10px, 1.8vh, 16px) * 2);
+    overflow: clip;
+  }
+}
+
+@media (max-height: 780px) and (min-width: 861px) {
+  .app-shell {
+    --app-header-height: 64px;
+  }
+
+  .eyebrow,
+  .label {
+    font-size: 0.78rem;
+  }
+
+  h2 {
+    font-size: 1.08rem;
+  }
+
+  .status-pill {
+    min-height: 34px;
+    padding: 0 12px;
+  }
+
+  .notice {
+    min-height: 38px;
+    padding: 9px 12px;
+  }
+
+  .device-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .config-section {
+    padding: 7px 9px;
+  }
+
+  .config-section-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .config-section-heading {
+    margin-bottom: 6px;
+  }
+
+  .control-row {
+    min-height: 36px;
+    margin-top: 5px;
+    padding: 5px 8px;
+  }
+
+  .toggle-row {
+    min-height: 34px;
+  }
+
+  .action-stack {
+    gap: 8px;
+  }
+
+  .state-box ul {
+    margin-top: 6px;
+  }
+}
+
+@media (max-height: 700px) and (min-width: 861px) {
+  .app-shell {
+    --app-header-height: 60px;
+  }
+
+  .app-header {
+    padding-top: 7px;
+    padding-bottom: 7px;
+  }
+
+  .brand-lockup {
+    margin-left: 10px;
+  }
+
+  .app-icon {
+    width: 38px;
+    height: 38px;
+  }
+
+  h1 {
+    font-size: 1.18rem;
+  }
+
+  .device-stage {
+    row-gap: 10px;
+    padding-top: clamp(18px, 3.4vh, 28px);
+    padding-bottom: 10px;
+  }
+
+  .device-strip-card {
+    --device-card-offset-y: clamp(-42px, -4.2vh, -20px);
+    width: min(280px, calc((100svh - 178px) * 0.52), 100%);
+    min-width: min(100%, 188px);
+    border-radius: 22px;
+  }
+
+  .device-card-grid {
+    padding-top: 8px;
+    transform: none;
+  }
+
+  .device-actions {
+    margin-top: clamp(16px, 4.8vh, 34px);
+  }
+
+  .device-info-panel {
+    gap: 6px;
+    padding: 14px 16px;
+  }
+
+  .connected-device-hero {
+    width: clamp(156px, 82%, 248px);
+  }
+
+  .config-sections {
+    gap: 5px;
+  }
+
+  .config-section {
+    padding: 6px 8px;
+  }
+
+  .config-section-heading {
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+
+  .config-section-heading p {
+    margin-top: 1px;
+  }
+
+  .control-row {
+    min-height: 34px;
+    margin-top: 4px;
+    padding: 5px 7px;
+  }
+
+  .range-inputs {
+    grid-template-columns: minmax(112px, 1fr) 96px;
+  }
+}
+
+.state-box strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.state-box ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--app-error);
+  font-weight: 400;
+}
+
+.state-warning {
+  margin-top: 10px;
+  padding: 9px 10px;
+  color: var(--app-warning);
+  background: var(--app-warning-bg);
+  border: 1px solid var(--app-warning-border);
+  border-radius: 8px;
+  font-size: 0.86rem;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+@media (max-width: 860px) {
+  .app-shell {
+    width: min(100% - 20px, 680px);
+    height: auto;
+    min-height: auto;
+    overflow: visible;
+    padding: 20px 0;
+  }
+
+  .app-shell.settings-mode {
+    padding-top: 84px;
+  }
+
+  .app-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .app-shell.settings-mode .app-header {
+    width: 100%;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .device-strip {
+    aspect-ratio: 0.68;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .device-stage {
+    height: auto;
+    min-height: clamp(360px, calc(100svh - 190px), 560px);
+    overflow: visible;
+  }
+
+  .device-stage-wrap,
+  .device-card-grid {
+    overflow: visible;
+  }
+
+  .device-card-grid.has-multiple-devices .device-strip-card {
+    transform: none;
+  }
+
+  .device-info-panel {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+    padding: 20px 18px;
+  }
+
+  .status-pill {
+    align-self: flex-start;
+  }
+
+  .header-actions {
+    align-items: flex-end;
+    align-self: flex-end;
+    margin-left: 0;
+  }
+
+  .header-status {
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .header-device-control-bar {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .device-actions {
+    justify-content: stretch;
+  }
+
+  .device-actions button {
+    flex: 0 1 180px;
+  }
+
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .footer-link {
+    align-self: flex-start;
+  }
+
+  .config-sections {
+    grid-template-columns: 1fr;
+  }
+
+  .config-section-featured {
+    grid-row: auto;
+  }
+
+  .control-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .settings-page {
+    height: auto;
+    min-height: auto;
+    margin: 0;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .settings-sidebar {
+    top: 0;
+    height: auto;
+  }
+
+  .settings-sidebar-content {
+    padding: 12px 10px;
+  }
+
+  .settings-detail {
+    grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
+    padding: 12px 0 12px 12px;
+  }
+
+  .about-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+}
+
+@media (max-width: 480px) {
+  .range-inputs {
+    grid-template-columns: 1fr;
+  }
+
+  .panel {
+    padding: 14px;
+  }
+
+  .about-github-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+}
