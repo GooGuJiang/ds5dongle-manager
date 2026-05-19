@@ -115,6 +115,8 @@ export const en = {
     title: "About",
     version: "Manager version",
     github: "GitHub URL",
+    softwareGithub: "Software GitHub URL",
+    firmwareGithub: "Firmware GitHub URL",
   },
   config: {
     title: "Device settings",

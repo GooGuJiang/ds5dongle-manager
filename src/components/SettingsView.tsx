@@ -113,8 +113,15 @@ export function SettingsView({
                 <a className="config-section about-github-card" href={APP_METADATA.githubUrl} target="_blank" rel="noreferrer">
                   <FaGithub aria-hidden="true" />
                   <span>
-                    <span className="about-info-label">{t("about.github")}</span>
+                    <span className="about-info-label">{t("about.softwareGithub")}</span>
                     <strong>{APP_METADATA.githubUrl}</strong>
+                  </span>
+                </a>
+                <a className="config-section about-github-card" href={APP_METADATA.firmwareGithubUrl} target="_blank" rel="noreferrer">
+                  <FaGithub aria-hidden="true" />
+                  <span>
+                    <span className="about-info-label">{t("about.firmwareGithub")}</span>
+                    <strong>{APP_METADATA.firmwareGithubUrl}</strong>
                   </span>
                 </a>
               </div>

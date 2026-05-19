@@ -115,6 +115,8 @@ export const zh = {
     title: "关于",
     version: "Manager 版本",
     github: "GitHub 地址",
+    softwareGithub: "软件 GitHub 地址",
+    firmwareGithub: "固件 GitHub 地址",
   },
   config: {
     title: "设备设置",
