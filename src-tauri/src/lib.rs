@@ -37,8 +37,7 @@ pub fn run() {
             let battery = MenuItem::with_id(app, "battery", &battery_text, false, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", &labels.quit, true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_window, &battery, &quit])?;
-            let tray_icon_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("icons/pwa-icon.png");
-            let tray_icon = Image::from_path(tray_icon_path)?;
+            let tray_icon = Image::from_bytes(include_bytes!("../icons/pwa-icon.png"))?;
 
             let tray_state = app.state::<TrayState>();
             if let Ok(mut battery_values) = tray_state.battery_values.lock() {
