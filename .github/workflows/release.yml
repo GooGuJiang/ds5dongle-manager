@@ -1,0 +1,213 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - package.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    name: Create GitHub Release from package version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      tag: ${{ steps.package.outputs.tag }}
+      exists: ${{ steps.tag.outputs.exists }}
+      release_name: ${{ steps.package.outputs.tag }}
+      release_body: ${{ steps.notes.outputs.body }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read package version
+        id: package
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG="v${VERSION}"
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if tag already exists
+        id: tag
+        shell: bash
+        run: |
+          if git rev-parse -q --verify "refs/tags/${{ steps.package.outputs.tag }}" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${{ steps.package.outputs.tag }} already exists. Nothing to release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Find previous version tag
+        id: previous
+        if: steps.tag.outputs.exists == 'false'
+        shell: bash
+        run: |
+          PREVIOUS_TAG="$(git tag --list 'v*' --sort=-v:refname | grep -v '^${{ steps.package.outputs.tag }}$' | head -n 1 || true)"
+          echo "tag=${PREVIOUS_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build release notes from recent commits
+        id: notes
+        if: steps.tag.outputs.exists == 'false'
+        shell: bash
+        run: |
+          if [ -n "${{ steps.previous.outputs.tag }}" ]; then
+            RANGE="${{ steps.previous.outputs.tag }}..HEAD"
+            RANGE_TITLE="Changes since ${{ steps.previous.outputs.tag }}"
+          else
+            RANGE="HEAD"
+            RANGE_TITLE="Recent changes"
+          fi
+
+          {
+            echo "## Summary (required)"
+            echo
+            echo "Automated desktop installer release for ${{ steps.package.outputs.tag }}."
+            echo
+            echo "## Description"
+            echo
+            echo "This release is generated from package.json and includes Windows, Linux, and macOS installer artifacts built by GitHub Actions."
+            echo
+            echo "## ${RANGE_TITLE}"
+            echo
+            HAS_COMMITS=false
+
+            while IFS= read -r COMMIT_HASH; do
+              HAS_COMMITS=true
+              SHORT_HASH="$(git rev-parse --short "${COMMIT_HASH}")"
+              SUBJECT="$(git log -1 --format=%s "${COMMIT_HASH}")"
+              BODY="$(git log -1 --format=%b "${COMMIT_HASH}")"
+
+              echo "### ${SUBJECT} (${SHORT_HASH})"
+              echo
+
+              if [ -n "${BODY}" ]; then
+                echo "${BODY}"
+                echo
+              fi
+            done < <(git log "${RANGE}" --format=%H --no-merges)
+
+            if [ "${HAS_COMMITS}" = false ]; then
+              echo "- Release ${{ steps.package.outputs.tag }}"
+              echo
+            fi
+
+            echo "## Installers"
+            echo
+            echo "- Windows: download the .msi or .exe asset."
+            echo "- Linux: download the .deb, .rpm, or .AppImage asset."
+            echo "- macOS: download the .dmg or .app.tar.gz asset."
+          } > RELEASE_NOTES.md
+
+          {
+            echo 'body<<EOF'
+            cat RELEASE_NOTES.md
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create and push version tag
+        if: steps.tag.outputs.exists == 'false'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.package.outputs.tag }}" -m "Release ${{ steps.package.outputs.tag }}"
+          git push origin "${{ steps.package.outputs.tag }}"
+
+  build-and-release:
+    name: Build ${{ matrix.label }} installer
+    needs: prepare-release
+    if: needs.prepare-release.outputs.exists == 'false'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS Apple Silicon
+            platform: macos-latest
+            args: --target aarch64-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - label: macOS Intel
+            platform: macos-latest
+            args: --target x86_64-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - label: Linux x64
+            platform: ubuntu-22.04
+            args: ''
+            rust_targets: ''
+          - label: Windows x64
+            platform: windows-latest
+            args: ''
+            rust_targets: ''
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sync Tauri version from package.json
+        shell: bash
+        run: |
+          node <<'EOF'
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const tauriConfigPath = 'src-tauri/tauri.conf.json';
+          const tauriConfig = JSON.parse(fs.readFileSync(tauriConfigPath, 'utf8'));
+          tauriConfig.version = pkg.version;
+          fs.writeFileSync(tauriConfigPath, `${JSON.stringify(tauriConfig, null, 2)}\n`);
+          EOF
+
+      - name: Build and upload Tauri release assets
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ needs.prepare-release.outputs.tag }}
+          releaseName: ${{ needs.prepare-release.outputs.release_name }}
+          releaseBody: ${{ needs.prepare-release.outputs.release_body }}
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
