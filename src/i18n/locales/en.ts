@@ -19,6 +19,10 @@ export const en = {
     lowBatteryNotification: "Controller low-battery notification",
     lowBatteryNotificationDescription: "Send a system notification when controller battery is at or below 15%.",
     testNotification: "Test notification",
+    closeBehaviorPromptTitle: "Minimize to tray when closing?",
+    closeBehaviorPromptDescription: "When closing the window, minimize to the tray and keep running, or exit the app directly.",
+    closeBehaviorTray: "Minimize to tray",
+    closeBehaviorExit: "Exit directly",
   },
   language: {
     label: "Language",

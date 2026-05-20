@@ -11,6 +11,7 @@ pub struct TrayState {
     pub battery_values: Mutex<Vec<String>>,
     pub labels: Mutex<TrayLabels>,
     pub close_to_tray: Mutex<bool>,
+    pub close_to_tray_asked: Mutex<bool>,
     pub open_window_item: Mutex<Option<MenuItem<Wry>>>,
     pub battery_item: Mutex<Option<MenuItem<Wry>>>,
     pub quit_item: Mutex<Option<MenuItem<Wry>>>,

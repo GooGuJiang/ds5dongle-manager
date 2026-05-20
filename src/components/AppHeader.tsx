@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ArrowLeft, RefreshCw, RotateCcw, Settings, Sparkles } from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
@@ -24,6 +25,12 @@ const headerFadeTransition = {
   duration: 0.12,
   ease: "easeOut" as const,
 };
+
+interface SoftwareSettingsPayload {
+  closeToTray: boolean;
+  closeToTrayAsked: boolean;
+  lowBatteryNotificationEnabled: boolean;
+}
 
 interface AppHeaderProps {
   theme: ThemeMode;
@@ -79,6 +86,12 @@ export function AppHeader({
   const [displayShowDeviceActions, setDisplayShowDeviceActions] = useState(showDeviceActions);
   const [softwareSettingsOpen, setSoftwareSettingsOpen] = useState(false);
   const [closeToTray, setCloseToTray] = useState(false);
+  const [closeToTrayAsked, setCloseToTrayAsked] = useState(true);
+  const [closeBehaviorDialogOpen, setCloseBehaviorDialogOpen] = useState(false);
+  const closeToTrayAskedRef = useRef(true);
+  const closeToTrayRef = useRef(false);
+  const closeBehaviorDialogOpenRef = useRef(false);
+  const forceCloseRef = useRef(false);
   const showControlSpacer = showBackButton && !showControlBar;
 
   useEffect(() => {
@@ -96,12 +109,105 @@ export function AppHeader({
   }, [issues, needsUsbReconnect, showControlBar, showDeviceActions, statusText]);
 
   useEffect(() => {
-    void invoke<boolean>("ds5_get_close_to_tray").then(setCloseToTray).catch(() => undefined);
+    let disposed = false;
+
+    void invoke<SoftwareSettingsPayload>("ds5_get_software_settings")
+      .then((settings) => {
+        if (!disposed) {
+          setCloseToTray(settings.closeToTray);
+          setCloseToTrayAsked(settings.closeToTrayAsked);
+          closeToTrayRef.current = settings.closeToTray;
+          closeToTrayAskedRef.current = settings.closeToTrayAsked;
+        }
+      })
+      .catch(() => undefined);
+
+    const unlistenPromise = listen<SoftwareSettingsPayload>("ds5-software-settings-changed", (event) => {
+      setCloseToTray(event.payload.closeToTray);
+      setCloseToTrayAsked(event.payload.closeToTrayAsked);
+      closeToTrayRef.current = event.payload.closeToTray;
+      closeToTrayAskedRef.current = event.payload.closeToTrayAsked;
+    });
+
+    return () => {
+      disposed = true;
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
   }, []);
+
+  useEffect(() => {
+    closeBehaviorDialogOpenRef.current = closeBehaviorDialogOpen;
+  }, [closeBehaviorDialogOpen]);
+
+  useEffect(() => {
+    const unlistenPromise = appWindow.onCloseRequested((event) => {
+      if (forceCloseRef.current) {
+        return;
+      }
+
+      if (closeToTrayAskedRef.current && closeToTrayRef.current) {
+        event.preventDefault();
+        void appWindow.hide();
+        return;
+      }
+
+      if (closeToTrayAskedRef.current || closeBehaviorDialogOpenRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      setCloseBehaviorDialogOpen(true);
+    });
+
+    return () => {
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [appWindow]);
 
   const updateCloseToTray = (checked: boolean) => {
     setCloseToTray(checked);
+    closeToTrayRef.current = checked;
     void invoke("ds5_set_close_to_tray", { closeToTray: checked }).catch(() => setCloseToTray(!checked));
+  };
+
+  const chooseCloseBehavior = async (useTray: boolean) => {
+    setCloseBehaviorDialogOpen(false);
+    setCloseToTray(useTray);
+    setCloseToTrayAsked(true);
+    closeToTrayRef.current = useTray;
+    closeToTrayAskedRef.current = true;
+
+    try {
+      await invoke("ds5_set_close_to_tray", { closeToTray: useTray });
+    } catch {
+      setCloseToTray(!useTray);
+      setCloseToTrayAsked(false);
+      closeToTrayRef.current = !useTray;
+      closeToTrayAskedRef.current = false;
+      return;
+    }
+
+    if (useTray) {
+      await appWindow.hide();
+      return;
+    }
+
+    forceCloseRef.current = true;
+    await appWindow.destroy();
+  };
+
+  const requestWindowClose = () => {
+    if (!closeToTrayAskedRef.current) {
+      setCloseBehaviorDialogOpen(true);
+      return;
+    }
+
+    if (closeToTrayRef.current) {
+      void appWindow.hide();
+      return;
+    }
+
+    void appWindow.close();
   };
 
   const updateLowBatteryNotification = (checked: boolean) => {
@@ -276,7 +382,7 @@ export function AppHeader({
           className="window-control-button is-close"
           onClick={(event) => {
             event.currentTarget.blur();
-            void appWindow.close();
+            requestWindowClose();
           }}
           aria-label="Close"
           title="Close"
@@ -320,6 +426,22 @@ export function AppHeader({
                 aria-label={t("softwareSettings.lowBatteryNotification")}
               />
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={closeBehaviorDialogOpen} onOpenChange={setCloseBehaviorDialogOpen}>
+        <DialogContent className="software-settings-dialog" data-no-drag>
+          <DialogHeader>
+            <DialogTitle>{t("softwareSettings.closeBehaviorPromptTitle")}</DialogTitle>
+            <DialogDescription>{t("softwareSettings.closeBehaviorPromptDescription")}</DialogDescription>
+          </DialogHeader>
+          <div className="software-settings-option-actions close-behavior-actions">
+            <Button type="button" variant="ghost" onClick={() => void chooseCloseBehavior(false)}>
+              {t("softwareSettings.closeBehaviorExit")}
+            </Button>
+            <Button type="button" onClick={() => void chooseCloseBehavior(true)}>
+              {t("softwareSettings.closeBehaviorTray")}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

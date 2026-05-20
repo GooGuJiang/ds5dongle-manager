@@ -3,6 +3,7 @@ mod hid;
 mod state;
 
 use commands::{
+    ds5_get_software_settings,
     ds5_get_system_info, ds5_list_devices, ds5_read_feature_report, ds5_read_input_report, ds5_send_feature_report,
     ds5_get_close_to_tray, ds5_set_close_to_tray, ds5_start_device_monitor,
     ds5_get_low_battery_notification_enabled, ds5_set_low_battery_notification_enabled,
@@ -31,6 +32,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            if let Err(error) = commands::sync_close_to_tray_state(&app.handle(), &app.state::<TrayState>()) {
+                eprintln!("failed to load software settings: {error}");
+            }
+
             let labels = app
                 .state::<TrayState>()
                 .labels
@@ -86,13 +91,9 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                let close_to_tray = window
-                    .app_handle()
-                    .state::<TrayState>()
-                    .close_to_tray
-                    .lock()
-                    .map(|value| *value)
-                    .unwrap_or(false);
+                let app = window.app_handle();
+                let state = app.state::<TrayState>();
+                let close_to_tray = state.close_to_tray.lock().map(|value| *value).unwrap_or(false);
 
                 if close_to_tray {
                     api.prevent_close();
@@ -109,6 +110,7 @@ pub fn run() {
             ds5_read_input_report,
             ds5_update_tray_batteries,
             ds5_update_tray_labels,
+            ds5_get_software_settings,
             ds5_set_close_to_tray,
             ds5_get_close_to_tray,
             ds5_set_low_battery_notification_enabled,
@@ -124,6 +126,7 @@ fn build_tray_state() -> TrayState {
         battery_values: std::sync::Mutex::new(vec!["--".to_string()]),
         labels: std::sync::Mutex::new(labels),
         close_to_tray: std::sync::Mutex::new(false),
+        close_to_tray_asked: std::sync::Mutex::new(false),
         open_window_item: std::sync::Mutex::new(None),
         battery_item: std::sync::Mutex::new(None),
         quit_item: std::sync::Mutex::new(None),

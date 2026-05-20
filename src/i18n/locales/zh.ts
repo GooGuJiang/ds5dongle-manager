@@ -19,6 +19,10 @@ export const zh = {
     lowBatteryNotification: "手柄低电量通知",
     lowBatteryNotificationDescription: "手柄电量低于或等于 15% 时发送系统通知。",
     testNotification: "测试通知",
+    closeBehaviorPromptTitle: "关闭窗口时要最小化到托盘吗？",
+    closeBehaviorPromptDescription: "关闭窗口时，最小化到托盘并继续运行，或直接退出程序。",
+    closeBehaviorTray: "最小化到托盘",
+    closeBehaviorExit: "直接退出",
   },
   language: {
     label: "语言",

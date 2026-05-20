@@ -207,6 +207,11 @@
   white-space: nowrap;
 }
 
+.close-behavior-actions {
+  justify-content: flex-end;
+  width: 100%;
+}
+
 .header-actions {
   flex: 0 1 auto;
   max-width: calc(100% - 230px);

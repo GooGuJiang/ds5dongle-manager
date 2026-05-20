@@ -12,11 +12,20 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 const SOFTWARE_SETTINGS_FILE_NAME: &str = "software-settings.json";
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Default, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SoftwareSettings {
     close_to_tray: bool,
+    close_to_tray_asked: bool,
     low_battery_notification_enabled: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoftwareSettingsDto {
+    pub close_to_tray: bool,
+    pub close_to_tray_asked: bool,
+    pub low_battery_notification_enabled: bool,
 }
 
 #[derive(Serialize)]
@@ -236,27 +245,34 @@ pub fn ds5_update_tray_labels(app: AppHandle, state: State<'_, TrayState>, label
 
 #[tauri::command]
 pub fn ds5_set_close_to_tray(app: AppHandle, state: State<'_, TrayState>, close_to_tray: bool) -> Result<(), String> {
-    let mut current_value = state.close_to_tray.lock().map_err(|error| error.to_string())?;
-    *current_value = close_to_tray;
+    update_close_to_tray_state(&state, close_to_tray, true)?;
     let mut settings = load_software_settings(&app)?;
     settings.close_to_tray = close_to_tray;
-    save_software_settings(&app, settings)?;
+    settings.close_to_tray_asked = true;
+    save_software_settings(&app, settings.clone())?;
+    emit_software_settings_changed(&app, settings);
     Ok(())
 }
 
 #[tauri::command]
 pub fn ds5_get_close_to_tray(app: AppHandle, state: State<'_, TrayState>) -> Result<bool, String> {
-    let close_to_tray = load_software_settings(&app)?.close_to_tray;
-    let mut current_value = state.close_to_tray.lock().map_err(|error| error.to_string())?;
-    *current_value = close_to_tray;
+    let settings = sync_software_settings_state(&app, &state)?;
+    let close_to_tray = settings.close_to_tray;
     Ok(close_to_tray)
+}
+
+#[tauri::command]
+pub fn ds5_get_software_settings(app: AppHandle, state: State<'_, TrayState>) -> Result<SoftwareSettingsDto, String> {
+    let settings = sync_software_settings_state(&app, &state)?;
+    Ok(settings.into())
 }
 
 #[tauri::command]
 pub fn ds5_set_low_battery_notification_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = load_software_settings(&app)?;
     settings.low_battery_notification_enabled = enabled;
-    save_software_settings(&app, settings)?;
+    save_software_settings(&app, settings.clone())?;
+    emit_software_settings_changed(&app, settings);
     Ok(())
 }
 
@@ -290,4 +306,34 @@ fn save_software_settings(app: &AppHandle, settings: SoftwareSettings) -> Result
 
     let contents = serde_json::to_string_pretty(&settings).map_err(|error| error.to_string())?;
     fs::write(path, contents).map_err(|error| error.to_string())
+}
+
+pub fn sync_close_to_tray_state(app: &AppHandle, state: &State<'_, TrayState>) -> Result<(), String> {
+    sync_software_settings_state(app, state).map(|_| ())
+}
+
+fn sync_software_settings_state(app: &AppHandle, state: &State<'_, TrayState>) -> Result<SoftwareSettings, String> {
+    let settings = load_software_settings(app)?;
+    update_close_to_tray_state(state, settings.close_to_tray, settings.close_to_tray_asked)?;
+    Ok(settings)
+}
+
+fn update_close_to_tray_state(state: &State<'_, TrayState>, close_to_tray: bool, close_to_tray_asked: bool) -> Result<(), String> {
+    *state.close_to_tray.lock().map_err(|error| error.to_string())? = close_to_tray;
+    *state.close_to_tray_asked.lock().map_err(|error| error.to_string())? = close_to_tray_asked;
+    Ok(())
+}
+
+fn emit_software_settings_changed(app: &AppHandle, settings: SoftwareSettings) {
+    let _ = app.emit("ds5-software-settings-changed", SoftwareSettingsDto::from(settings));
+}
+
+impl From<SoftwareSettings> for SoftwareSettingsDto {
+    fn from(settings: SoftwareSettings) -> Self {
+        Self {
+            close_to_tray: settings.close_to_tray,
+            close_to_tray_asked: settings.close_to_tray_asked,
+            low_battery_notification_enabled: settings.low_battery_notification_enabled,
+        }
+    }
 }
