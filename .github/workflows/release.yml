@@ -4,8 +4,12 @@ on:
   push:
     branches:
       - master
+    tags:
+      - 'v*'
     paths:
       - package.json
+      - .github/workflows/release.yml
+      - src-tauri/**
   workflow_dispatch:
 
 permissions:
@@ -36,7 +40,11 @@ jobs:
         shell: bash
         run: |
           VERSION="$(node -p "require('./package.json').version")"
-          TAG="v${VERSION}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="v${VERSION}"
+          fi
 
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
@@ -45,7 +53,9 @@ jobs:
         id: tag
         shell: bash
         run: |
-          if git rev-parse -q --verify "refs/tags/${{ steps.package.outputs.tag }}" >/dev/null; then
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          elif git rev-parse -q --verify "refs/tags/${{ steps.package.outputs.tag }}" >/dev/null; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Tag ${{ steps.package.outputs.tag }} already exists. Nothing to release."
           else
@@ -114,7 +124,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Create and push version tag
-        if: steps.tag.outputs.exists == 'false'
+        if: steps.tag.outputs.exists == 'false' && github.ref_type != 'tag'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
