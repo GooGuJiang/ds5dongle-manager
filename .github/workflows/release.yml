@@ -74,14 +74,6 @@ jobs:
           fi
 
           {
-            echo "## Summary (required)"
-            echo
-            echo "Automated desktop installer release for ${{ steps.package.outputs.tag }}."
-            echo
-            echo "## Description"
-            echo
-            echo "This release is generated from package.json and includes Windows, Linux, and macOS installer artifacts built by GitHub Actions."
-            echo
             echo "## ${RANGE_TITLE}"
             echo
             HAS_COMMITS=false
@@ -96,6 +88,8 @@ jobs:
               echo
 
               if [ -n "${BODY}" ]; then
+                echo "#### Description"
+                echo
                 echo "${BODY}"
                 echo
               fi
