@@ -96,18 +96,6 @@ pub fn ds5_read_input_report(path: String, timeout_ms: i32, length: usize) -> Re
 }
 
 #[tauri::command]
-pub fn ds5_update_tray_battery(app: AppHandle, state: State<'_, TrayState>, battery_text: String) -> Result<(), String> {
-    ds5_update_tray_batteries(
-        app,
-        state,
-        vec![crate::state::TrayBatteryStatus {
-            label: String::new(),
-            battery_text,
-        }],
-    )
-}
-
-#[tauri::command]
 pub fn ds5_update_tray_batteries(
     app: AppHandle,
     state: State<'_, TrayState>,
