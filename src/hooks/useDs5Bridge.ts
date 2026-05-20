@@ -681,10 +681,6 @@ export function useDs5Bridge(): UseDs5BridgeResult {
       };
     });
 
-    if (batteries.length === 0) {
-      batteries.push({ label: "", batteryText: batteryText || "--" });
-    }
-
     void invoke("ds5_update_tray_batteries", { batteries }).catch(() => undefined);
   }, [authorizedDeviceBatteryText, authorizedDevices, batteryText, t]);
 

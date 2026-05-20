@@ -13,8 +13,10 @@ import { NoticeList } from "./components/NoticeList";
 import { useDs5Bridge } from "./hooks/useDs5Bridge";
 import { useTheme } from "./hooks/useTheme";
 import { checkFirmwareUpdate, shouldCheckFirmwareUpdate, type FirmwareUpdateCheckResult } from "./lib/firmwareRelease";
+import { checkSoftwareUpdate, getSoftwareSystemInfo, type SoftwareSystemInfo, type SoftwareUpdateCheckResult } from "./lib/softwareRelease";
 
 const FirmwareUpdateDialog = lazy(() => import("./components/FirmwareUpdateDialog").then((module) => ({ default: module.FirmwareUpdateDialog })));
+const SoftwareUpdateDialog = lazy(() => import("./components/SoftwareUpdateDialog").then((module) => ({ default: module.SoftwareUpdateDialog })));
 const SettingsView = lazy(() => import("./components/SettingsView").then((module) => ({ default: module.SettingsView })));
 
 export default function App() {
@@ -25,9 +27,13 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [firmwareUpdateResult, setFirmwareUpdateResult] = useState<FirmwareUpdateCheckResult | null>(null);
   const [firmwareUpdateDialogOpen, setFirmwareUpdateDialogOpen] = useState(false);
+  const [softwareUpdateResult, setSoftwareUpdateResult] = useState<SoftwareUpdateCheckResult | null>(null);
+  const [softwareUpdateDialogOpen, setSoftwareUpdateDialogOpen] = useState(false);
+  const [softwareSystemInfo, setSoftwareSystemInfo] = useState<SoftwareSystemInfo | null>(null);
   const [deviceSwitching, setDeviceSwitching] = useState(false);
   const deviceSwitchingTimerRef = useRef<number | null>(null);
   const dismissedFirmwareUpdateKeyRef = useRef(readDismissedUpdateKey(FIRMWARE_UPDATE_DISMISSED_KEY));
+  const dismissedSoftwareUpdateKeyRef = useRef(readDismissedUpdateKey(SOFTWARE_UPDATE_DISMISSED_KEY));
   const isBusy = bridge.operation !== null;
   const headerIssues = useMemo(() => bridge.issues.map((issue) => t(`validation.${issue.field}`)), [bridge.issues, t]);
   const isSettingsView = view === "settings" || view === "about";
@@ -85,6 +91,38 @@ export default function App() {
     return () => abortController.abort();
   }, [bridge.client, bridge.firmwareVersion, view]);
 
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    void Promise.all([checkSoftwareUpdate(abortController.signal), getSoftwareSystemInfo()])
+      .then(([result, systemInfo]) => {
+        if (abortController.signal.aborted) {
+          return;
+        }
+
+        setSoftwareSystemInfo(systemInfo);
+
+        if (!result?.updateAvailable) {
+          return;
+        }
+
+        const updateKey = softwareUpdatePromptKey(result);
+
+        setSoftwareUpdateResult(result);
+
+        if (dismissedSoftwareUpdateKeyRef.current !== updateKey) {
+          setSoftwareUpdateDialogOpen(true);
+        }
+      })
+      .catch((error) => {
+        if (!abortController.signal.aborted) {
+          console.error("Software update check failed", error);
+        }
+      });
+
+    return () => abortController.abort();
+  }, []);
+
   const handleFirmwareUpdateDialogOpenChange = useCallback((open: boolean) => {
     setFirmwareUpdateDialogOpen(open);
 
@@ -99,6 +137,21 @@ export default function App() {
       setFirmwareUpdateDialogOpen(true);
     }
   }, [firmwareUpdateResult]);
+
+  const handleSoftwareUpdateDialogOpenChange = useCallback((open: boolean) => {
+    setSoftwareUpdateDialogOpen(open);
+
+    if (!open && softwareUpdateResult?.updateAvailable) {
+      dismissedSoftwareUpdateKeyRef.current = softwareUpdatePromptKey(softwareUpdateResult);
+      writeDismissedUpdateKey(SOFTWARE_UPDATE_DISMISSED_KEY, dismissedSoftwareUpdateKeyRef.current);
+    }
+  }, [softwareUpdateResult]);
+
+  const handleOpenSoftwareUpdateDialog = useCallback(() => {
+    if (softwareUpdateResult?.updateAvailable) {
+      setSoftwareUpdateDialogOpen(true);
+    }
+  }, [softwareUpdateResult]);
 
   const handleSelectDevice = useCallback(async (device: HIDDevice) => {
     const shouldAnimateSwitch = bridge.client?.device !== device;
@@ -159,10 +212,23 @@ export default function App() {
           />
         </Suspense>
       )}
+      {softwareUpdateResult?.updateAvailable && (
+        <Suspense fallback={null}>
+          <SoftwareUpdateDialog
+            open={softwareUpdateDialogOpen}
+            result={softwareUpdateResult}
+            systemInfo={softwareSystemInfo}
+            onOpenChange={handleSoftwareUpdateDialogOpenChange}
+          />
+        </Suspense>
+      )}
         <main className={`app-shell ${isSettingsView ? "settings-mode" : ""} ${deviceSwitching ? "is-device-switching" : ""}`}>
         <AppHeader
           theme={theme.theme}
           onThemeChange={theme.setTheme}
+          softwareUpdateAvailable={softwareUpdateResult?.updateAvailable}
+          softwareUpdateVersion={softwareUpdateResult?.latestRelease.tagName}
+          onSoftwareUpdateClick={handleOpenSoftwareUpdateDialog}
           statusText={isSettingsView && bridge.client ? bridge.statusText : undefined}
           issues={headerIssues}
           needsUsbReconnect={bridge.needsUsbReconnect}
@@ -226,8 +292,13 @@ export default function App() {
 }
 
 const FIRMWARE_UPDATE_DISMISSED_KEY = "firmware-update-dismissed-key";
+const SOFTWARE_UPDATE_DISMISSED_KEY = "software-update-dismissed-key";
 
 function firmwareUpdatePromptKey(result: FirmwareUpdateCheckResult): string {
+  return `${result.currentVersion}->${result.latestRelease.tagName}`;
+}
+
+function softwareUpdatePromptKey(result: SoftwareUpdateCheckResult): string {
   return `${result.currentVersion}->${result.latestRelease.tagName}`;
 }
 

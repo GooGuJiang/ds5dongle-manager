@@ -1,5 +1,6 @@
 import { Gauge, Gamepad2, Volume2, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { flushSync } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { UseDs5BridgeResult } from "../hooks/useDs5Bridge";
@@ -115,10 +116,12 @@ export function ConfigPanel({ bridge, onProgressComplete }: ConfigPanelProps) {
       clearManagedTimeouts();
       stopProgressAnimation();
 
-      setProgressTitle(title);
-      setProgressDescription(description);
-      setProgressValue(0);
-      setShowProgressDialog(true);
+      flushSync(() => {
+        setProgressTitle(title);
+        setProgressDescription(description);
+        setProgressValue(0);
+        setShowProgressDialog(true);
+      });
 
       // 操作执行期间最多走到 90%，等待真正完成后再补到 100%
       animateProgressTo(90, PROGRESS_ANIMATION_DURATION_MS, runId);
@@ -207,7 +210,9 @@ export function ConfigPanel({ bridge, onProgressComplete }: ConfigPanelProps) {
       );
     }
 
-    bridge.setDraftField("pollingRateMode", value);
+    window.requestAnimationFrame(() => {
+      bridge.setDraftField("pollingRateMode", value);
+    });
   };
 
   // 处理模式切换

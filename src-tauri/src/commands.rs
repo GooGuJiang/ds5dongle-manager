@@ -19,6 +19,21 @@ struct SoftwareSettings {
     low_battery_notification_enabled: bool,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemInfoDto {
+    os: String,
+    arch: String,
+}
+
+#[tauri::command]
+pub fn ds5_get_system_info() -> SystemInfoDto {
+    SystemInfoDto {
+        os: std::env::consts::OS.to_string(),
+        arch: std::env::consts::ARCH.to_string(),
+    }
+}
+
 #[tauri::command]
 pub fn ds5_list_devices() -> Result<Vec<HidDeviceInfoDto>, String> {
     let api = HidApi::new().map_err(error_to_string)?;
@@ -133,7 +148,7 @@ pub fn ds5_update_tray_batteries(
 }
 
 fn normalize_tray_battery_values(batteries: Vec<crate::state::TrayBatteryStatus>) -> Vec<String> {
-    let mut values: Vec<String> = batteries
+    let values: Vec<String> = batteries
         .into_iter()
         .filter_map(|status| {
             let battery_text = status.battery_text.trim();
@@ -151,14 +166,14 @@ fn normalize_tray_battery_values(batteries: Vec<crate::state::TrayBatteryStatus>
         })
         .collect();
 
-    if values.is_empty() {
-        values.push("--".to_string());
-    }
-
     values
 }
 
 fn format_tray_menu_battery_text(labels: &crate::state::TrayLabels, battery_lines: &[String]) -> String {
+    if battery_lines.is_empty() {
+        return labels.battery_prefix.to_string();
+    }
+
     if battery_lines.len() <= 1 {
         return format!("{}：{}", labels.battery_prefix, battery_lines.first().map(String::as_str).unwrap_or("--"));
     }

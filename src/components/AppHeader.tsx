@@ -28,9 +28,9 @@ const headerFadeTransition = {
 interface AppHeaderProps {
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
-  pwaUpdateAvailable?: boolean;
-  pwaUpdateVersion?: string;
-  onPwaUpdateClick?: () => void;
+  softwareUpdateAvailable?: boolean;
+  softwareUpdateVersion?: string;
+  onSoftwareUpdateClick?: () => void;
   statusText?: string;
   issues?: string[];
   needsUsbReconnect?: boolean;
@@ -50,9 +50,9 @@ interface AppHeaderProps {
 export function AppHeader({
   theme,
   onThemeChange,
-  pwaUpdateAvailable = false,
-  pwaUpdateVersion,
-  onPwaUpdateClick,
+  softwareUpdateAvailable = false,
+  softwareUpdateVersion,
+  onSoftwareUpdateClick,
   statusText,
   issues = [],
   needsUsbReconnect = false,
@@ -140,18 +140,18 @@ export function AppHeader({
         <motion.div className="brand-main" layout transition={headerMotionTransition} data-tauri-drag-region>
           <img className="app-icon" src="/pwa-icon.svg" alt="" aria-hidden="true" />
           <h1>{t("app.title")}</h1>
-          {pwaUpdateAvailable && (
+          {softwareUpdateAvailable && (
             <button
               type="button"
               className="brand-update-button"
-              onClick={onPwaUpdateClick}
-              aria-label={t("app.updateAvailable", { version: pwaUpdateVersion })}
+              onClick={onSoftwareUpdateClick}
+              aria-label={t("app.updateAvailable", { version: softwareUpdateVersion })}
               data-tooltip-id="header-device-actions-tooltip"
-              data-tooltip-content={t("app.updateAvailable", { version: pwaUpdateVersion })}
+              data-tooltip-content={t("app.updateAvailable", { version: softwareUpdateVersion })}
               data-tooltip-place="bottom"
             >
               <Sparkles size={15} aria-hidden="true" />
-              <span>{t("app.updateBadge", { version: pwaUpdateVersion })}</span>
+              <span>{t("app.updateBadge", { version: softwareUpdateVersion })}</span>
             </button>
           )}
         </motion.div>

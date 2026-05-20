@@ -3,7 +3,7 @@ mod hid;
 mod state;
 
 use commands::{
-    ds5_list_devices, ds5_read_feature_report, ds5_read_input_report, ds5_send_feature_report,
+    ds5_get_system_info, ds5_list_devices, ds5_read_feature_report, ds5_read_input_report, ds5_send_feature_report,
     ds5_get_close_to_tray, ds5_set_close_to_tray, ds5_start_device_monitor,
     ds5_get_low_battery_notification_enabled, ds5_set_low_battery_notification_enabled,
     ds5_update_tray_batteries, ds5_update_tray_labels,
@@ -37,7 +37,7 @@ pub fn run() {
                 .lock()
                 .map(|labels| labels.clone())
                 .unwrap_or_else(|_| TrayLabels::fallback());
-            let battery_text = format_tray_battery_text(&labels, &["--".to_string()]);
+            let battery_text = format_tray_battery_text(&labels, &[]);
             let open_window = MenuItem::with_id(app, "open_window", &labels.open_window, true, None::<&str>)?;
             let battery = MenuItem::with_id(app, "battery", &battery_text, false, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", &labels.quit, true, None::<&str>)?;
@@ -48,7 +48,7 @@ pub fn run() {
 
             let tray_state = app.state::<TrayState>();
             if let Ok(mut battery_values) = tray_state.battery_values.lock() {
-                *battery_values = vec!["--".to_string()];
+                *battery_values = Vec::new();
             }
             if let Ok(mut open_window_item) = tray_state.open_window_item.lock() {
                 *open_window_item = Some(open_window.clone());
@@ -101,6 +101,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            ds5_get_system_info,
             ds5_list_devices,
             ds5_start_device_monitor,
             ds5_read_feature_report,
@@ -130,6 +131,10 @@ fn build_tray_state() -> TrayState {
 }
 
 fn format_tray_battery_text(labels: &TrayLabels, battery_values: &[String]) -> String {
+    if battery_values.is_empty() {
+        return labels.battery_prefix.to_string();
+    }
+
     format!("{}：{}", labels.battery_prefix, battery_values.join(" / "))
 }
 

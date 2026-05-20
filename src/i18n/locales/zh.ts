@@ -48,23 +48,23 @@ export const zh = {
     webHidUnsupported:
       "当前浏览器无法直接连接设备。请使用 Chrome、Edge 等 Chromium 浏览器，并通过 HTTPS、localhost 或 127.0.0.1 打开页面。",
   },
-  pwa: {
-    offlineReady: "页面已缓存到本机，离线也可以打开",
-    cacheRefresh: "正在更新页面内容",
-    updateFailed: "更新失败，请手动刷新页面",
-  },
-  pwaUpdate: {
-    title: "发现 Manager 新版本",
-    description: "当前 Manager 版本为 {{current}}，最新版本为 {{latest}}。",
+  softwareUpdate: {
+    title: "发现软件新版本",
+    description: "当前软件版本为 {{current}}，最新版本为 {{latest}}。",
     currentVersion: "当前版本",
     latestVersion: "最新版本",
     latestCommit: "最新提交",
-    releaseNotes: "更新日志",
+    releaseNotes: "更新说明",
     highlights: "更新亮点",
+    assets: "{{os}} 安装包下载",
     later: "稍后再说",
-    updateNow: "立即更新",
-    updating: "正在更新",
     openRelease: "打开发布页",
+    os: {
+      windows: "Windows",
+      macos: "macOS",
+      linux: "Linux",
+      unknown: "当前系统",
+    },
   },
   firmwareUpdate: {
     title: "发现 Pico 固件新版本",

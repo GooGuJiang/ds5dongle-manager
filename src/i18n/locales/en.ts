@@ -48,23 +48,23 @@ export const en = {
     webHidUnsupported:
       "This browser cannot connect to the device directly. Please use Chrome, Edge, or another Chromium browser, and open the page over HTTPS, localhost, or 127.0.0.1.",
   },
-  pwa: {
-    offlineReady: "This page has been cached locally and can be opened offline.",
-    cacheRefresh: "Updating page content",
-    updateFailed: "Update failed. Please refresh the page manually.",
-  },
-  pwaUpdate: {
-    title: "New manager version available",
-    description: "Current manager version is {{current}}. The latest version is {{latest}}.",
+  softwareUpdate: {
+    title: "New software version available",
+    description: "Current software version is {{current}}. The latest version is {{latest}}.",
     currentVersion: "Current version",
     latestVersion: "Latest version",
     latestCommit: "Latest commit",
     releaseNotes: "Release notes",
     highlights: "Highlights",
+    assets: "{{os}} installer downloads",
     later: "Later",
-    updateNow: "Update now",
-    updating: "Updating",
     openRelease: "Open release page",
+    os: {
+      windows: "Windows",
+      macos: "macOS",
+      linux: "Linux",
+      unknown: "Current system",
+    },
   },
   firmwareUpdate: {
     title: "New Pico firmware available",
