@@ -11,11 +11,12 @@ The upstream DS5Dongle project turns a Raspberry Pi Pico 2 W into a wireless ada
 ## Features
 
 - Automatically discover and connect DS5Dongle devices
+- Manage multiple Raspberry Pi Pico devices from one interface
 - View battery, firmware version, serial number, and signal strength
 - Read, apply, save, and reset dongle configuration
 - Configure haptics, speaker volume, idle disconnect, Pico LED, polling rate, and controller mode
 - Support 250 Hz, 500 Hz, and Real-Time polling rates, plus DS5, DSE, and Auto modes
-- Check manager updates and notify when the latest DS5Dongle firmware is available from GitHub
+- Detect Pico firmware versions and notify when newer DS5Dongle firmware is available from GitHub
 - Support light/dark/system themes, English/Chinese UI, and controller battery display in the system tray
 
 ## Screenshots

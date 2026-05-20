@@ -11,11 +11,11 @@ DS5 Dongle Manager 是一个为 [awalol/DS5Dongle](https://github.com/awalol/DS5
 ## 功能特性
 
 - 自动发现并连接 DS5Dongle 设备
+- 支持在同一界面管理多个 Raspberry Pi Pico 设备
 - 查看电量、固件版本、序列号和信号强度
 - 读取、应用、保存和恢复设备配置
 - 配置触觉反馈、扬声器音量、闲置断开、Pico 指示灯、回报率和控制器模式
-- 支持 250 Hz、500 Hz、实时回报率，以及 DS5、DSE、自动模式
-- 支持检测 Manager 更新，并从 GitHub 获取最新 DS5Dongle 固件版本进行提醒
+- 支持检测 Pico 固件版本，并在 GitHub 发布新版 DS5Dongle 固件时提醒更新
 - 支持浅色/深色/跟随系统主题、中英文界面和系统托盘查看手柄电量
 
 ## 项目截图
