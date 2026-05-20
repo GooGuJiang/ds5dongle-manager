@@ -173,6 +173,77 @@
   -webkit-app-region: no-drag;
 }
 
+.software-settings-page-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.software-settings-subpage-header {
+  position: relative;
+  min-height: 42px;
+  padding-left: 40px;
+}
+
+.software-settings-back-button {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 999px;
+}
+
+.software-settings-entry {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  color: var(--foreground);
+  cursor: pointer;
+  background: var(--muted);
+  border: 0;
+  border-radius: 12px;
+  text-align: left;
+  transition:
+    background-color 160ms ease,
+    transform 160ms ease;
+}
+
+.software-settings-entry:hover,
+.software-settings-entry:focus-visible {
+  background: color-mix(in srgb, var(--muted) 78%, var(--foreground));
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.software-settings-entry-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--card) 72%, transparent);
+  border-radius: 10px;
+}
+
+.software-settings-entry-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.software-settings-entry-copy strong {
+  font-size: 0.95rem;
+}
+
+.software-settings-entry-copy small {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .software-settings-option {
   display: flex;
   align-items: center;
@@ -197,6 +268,18 @@
   line-height: 1.35;
 }
 
+.software-settings-option-column {
+  display: grid;
+  gap: 14px;
+}
+
+.software-settings-option-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
 .software-settings-option-actions {
   display: inline-flex;
   flex: 0 0 auto;
@@ -210,7 +293,9 @@
   white-space: nowrap;
 }
 
-.software-settings-test-notification-button {
+.software-settings-test-notification-button,
+.software-settings-sound-row [data-slot="button"],
+.software-settings-sound-footer [data-slot="button"] {
   color: #ffffff;
   background: #111827;
   border: 1px solid #111827;
@@ -218,36 +303,162 @@
 }
 
 .software-settings-test-notification-button:hover,
-.software-settings-test-notification-button:focus-visible {
+.software-settings-test-notification-button:focus-visible,
+.software-settings-sound-row [data-slot="button"]:hover,
+.software-settings-sound-row [data-slot="button"]:focus-visible,
+.software-settings-sound-footer [data-slot="button"]:hover,
+.software-settings-sound-footer [data-slot="button"]:focus-visible {
   color: #ffffff;
   background: #030712;
   border-color: #030712;
 }
 
-.software-settings-test-notification-button:disabled {
+.software-settings-test-notification-button:disabled,
+.software-settings-sound-row [data-slot="button"]:disabled,
+.software-settings-sound-footer [data-slot="button"]:disabled {
   color: rgb(255 255 255 / 72%);
   background: #4b5563;
   border-color: #4b5563;
   opacity: 0.7;
 }
 
-.dark .software-settings-test-notification-button {
+.dark .software-settings-test-notification-button,
+.dark .software-settings-sound-row [data-slot="button"],
+.dark .software-settings-sound-footer [data-slot="button"] {
   color: #111827;
   background: #f9fafb;
   border-color: #f9fafb;
 }
 
 .dark .software-settings-test-notification-button:hover,
-.dark .software-settings-test-notification-button:focus-visible {
+.dark .software-settings-test-notification-button:focus-visible,
+.dark .software-settings-sound-row [data-slot="button"]:hover,
+.dark .software-settings-sound-row [data-slot="button"]:focus-visible,
+.dark .software-settings-sound-footer [data-slot="button"]:hover,
+.dark .software-settings-sound-footer [data-slot="button"]:focus-visible {
   color: #030712;
   background: #e5e7eb;
   border-color: #e5e7eb;
 }
 
-.dark .software-settings-test-notification-button:disabled {
+.dark .software-settings-test-notification-button:disabled,
+.dark .software-settings-sound-row [data-slot="button"]:disabled,
+.dark .software-settings-sound-footer [data-slot="button"]:disabled {
   color: rgb(17 24 39 / 70%);
   background: #9ca3af;
   border-color: #9ca3af;
+}
+
+.software-settings-sound-list {
+  display: grid;
+  gap: 13px;
+  width: 100%;
+}
+
+.software-settings-sound-list[data-disabled="true"] {
+  opacity: 0.62;
+}
+
+.software-settings-sound-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.85fr) minmax(140px, 1fr) minmax(58px, auto);
+  align-items: center;
+  gap: 12px;
+  min-height: 34px;
+}
+
+.software-settings-sound-row [data-slot="slider"] {
+  align-self: center;
+  min-width: 0;
+  background: transparent;
+}
+
+.software-settings-sound-row [data-slot="slider-track"] {
+  background: color-mix(in srgb, var(--foreground) 14%, transparent);
+}
+
+.software-settings-sound-row [data-slot="slider-range"] {
+  background: #111827;
+}
+
+.software-settings-sound-row [data-slot="slider-thumb"] {
+  background: #111827;
+  border-color: #111827;
+  box-shadow: none;
+}
+
+.dark .software-settings-sound-row [data-slot="slider-track"] {
+  background: color-mix(in srgb, var(--foreground) 22%, transparent);
+}
+
+.dark .software-settings-sound-row [data-slot="slider-range"],
+.dark .software-settings-sound-row [data-slot="slider-thumb"] {
+  background: #f9fafb;
+  border-color: #f9fafb;
+}
+
+.software-settings-sound-row [data-slot="button"] {
+  align-self: center;
+  justify-self: end;
+  min-width: 58px;
+}
+
+.software-settings-sound-label {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--foreground);
+}
+
+.software-settings-sound-label strong {
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.software-settings-sound-label span {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.software-settings-sound-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 560px) {
+  .software-settings-option,
+  .software-settings-option-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .software-settings-option-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .software-settings-sound-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .software-settings-sound-row [data-slot="slider"] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .software-settings-sound-row [data-slot="button"] {
+    grid-column: 2;
+    grid-row: 1;
+  }
 }
 
 .close-behavior-actions {

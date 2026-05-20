@@ -242,7 +242,13 @@ export default function App() {
           onResetToDefaults={bridge.resetToDefaults}
           lowBatteryNotificationEnabled={bridge.lowBatteryNotificationEnabled}
           onLowBatteryNotificationEnabledChange={bridge.setLowBatteryNotificationEnabled}
+          controllerNotificationSoundEnabled={bridge.controllerNotificationSoundEnabled}
+          controllerNotificationSoundVolumes={bridge.controllerNotificationSoundVolumes}
+          onControllerNotificationSoundEnabledChange={bridge.setControllerNotificationSoundEnabled}
+          onControllerNotificationSoundVolumeChange={bridge.setControllerNotificationSoundVolume}
+          onResetControllerNotificationSoundVolumes={bridge.resetControllerNotificationSoundVolumes}
           onTestLowBatteryNotification={bridge.testLowBatteryNotification}
+          onTestControllerNotificationSound={bridge.testControllerNotificationSound}
         />
         {view === "home" ? (
           <>

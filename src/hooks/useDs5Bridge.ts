@@ -35,6 +35,14 @@ const BATTERY_LISTEN_TIMEOUT_MS = 1_200;
 const SWITCH_RECONNECT_WINDOW_MS = 30_000;
 const LOW_BATTERY_THRESHOLD_PERCENT = 15;
 
+export type ControllerNotificationSound = "connected" | "disconnected" | "lowBattery";
+
+export interface ControllerNotificationSoundVolumes {
+  connected: number;
+  disconnected: number;
+  lowBattery: number;
+}
+
 export interface UseDs5BridgeResult {
   supported: boolean;
   client: Ds5BridgeHidClient | null;
@@ -62,10 +70,16 @@ export interface UseDs5BridgeResult {
   isDefaultConfig: boolean;
   needsUsbReconnect: boolean;
   lowBatteryNotificationEnabled: boolean;
+  controllerNotificationSoundEnabled: boolean;
+  controllerNotificationSoundVolumes: ControllerNotificationSoundVolumes;
   switchReadyToken: number;
   setDraftField: <Key extends keyof ConfigBody>(field: Key, value: ConfigBody[Key]) => void;
   setLowBatteryNotificationEnabled: (enabled: boolean) => Promise<void>;
+  setControllerNotificationSoundEnabled: (enabled: boolean) => Promise<void>;
+  setControllerNotificationSoundVolume: (sound: ControllerNotificationSound, volume: number) => Promise<void>;
+  resetControllerNotificationSoundVolumes: () => Promise<void>;
   testLowBatteryNotification: () => Promise<void>;
+  testControllerNotificationSound: (sound: ControllerNotificationSound) => Promise<void>;
   refreshAuthorizedDevices: () => Promise<void>;
   connect: () => Promise<void>;
   connectAuthorized: (device: HIDDevice) => Promise<void>;
@@ -89,6 +103,8 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   const [error, setError] = useState<string | null>(null);
   const [needsUsbReconnect, setNeedsUsbReconnect] = useState(false);
   const [lowBatteryNotificationEnabled, setLowBatteryNotificationEnabledState] = useState(true);
+  const [controllerNotificationSoundEnabled, setControllerNotificationSoundEnabledState] = useState(true);
+  const [controllerNotificationSoundVolumes, setControllerNotificationSoundVolumes] = useState<ControllerNotificationSoundVolumes>(DEFAULT_CONTROLLER_NOTIFICATION_SOUND_VOLUMES);
   const [shouldReturnHome, setShouldReturnHome] = useState(false);
   const shouldReturnHomeRef = useRef(false);
   const [switchReadyToken, setSwitchReadyToken] = useState(0);
@@ -118,6 +134,9 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   const pendingChangedFieldsRef = useRef<Set<keyof ConfigBody>>(new Set());
   const lowBatteryNotificationEnabledRef = useRef(true);
   const lowBatteryNotifiedKeyRef = useRef<Set<string>>(new Set());
+  const controllerNotificationSoundEnabledRef = useRef(true);
+  const controllerNotificationSoundVolumesRef = useRef<ControllerNotificationSoundVolumes>(DEFAULT_CONTROLLER_NOTIFICATION_SOUND_VOLUMES);
+  const suppressNextConnectSoundRef = useRef(false);
 
   const issues = useMemo(() => validateConfig(draft), [draft]);
   const isConnected = Boolean(client?.device.opened);
@@ -266,18 +285,84 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     await invoke("ds5_set_low_battery_notification_enabled", { enabled });
   }, []);
 
+  const setControllerNotificationSoundEnabled = useCallback(async (enabled: boolean) => {
+    controllerNotificationSoundEnabledRef.current = enabled;
+    setControllerNotificationSoundEnabledState(enabled);
+    await invoke("ds5_set_controller_notification_sound_enabled", { enabled });
+  }, []);
+
+  const setControllerNotificationSoundVolume = useCallback(async (sound: ControllerNotificationSound, volume: number) => {
+    const nextVolumes = {
+      ...controllerNotificationSoundVolumesRef.current,
+      [sound]: normalizeNotificationVolume(volume),
+    };
+    controllerNotificationSoundVolumesRef.current = nextVolumes;
+    setControllerNotificationSoundVolumes(nextVolumes);
+
+    await invoke<ControllerNotificationSoundVolumes>("ds5_set_controller_notification_sound_volume", { sound, volume: nextVolumes[sound] })
+      .then((volumes) => {
+        const normalizedVolumes = normalizeNotificationVolumes(volumes);
+        controllerNotificationSoundVolumesRef.current = normalizedVolumes;
+        setControllerNotificationSoundVolumes(normalizedVolumes);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const resetControllerNotificationSoundVolumes = useCallback(async () => {
+    controllerNotificationSoundVolumesRef.current = DEFAULT_CONTROLLER_NOTIFICATION_SOUND_VOLUMES;
+    setControllerNotificationSoundVolumes(DEFAULT_CONTROLLER_NOTIFICATION_SOUND_VOLUMES);
+
+    await invoke<ControllerNotificationSoundVolumes>("ds5_reset_controller_notification_sound_volumes")
+      .then((volumes) => {
+        const normalizedVolumes = normalizeNotificationVolumes(volumes);
+        controllerNotificationSoundVolumesRef.current = normalizedVolumes;
+        setControllerNotificationSoundVolumes(normalizedVolumes);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const playControllerNotificationSound = useCallback(async (sound: ControllerNotificationSound) => {
+    if (!controllerNotificationSoundEnabledRef.current || controllerNotificationSoundVolumesRef.current[sound] <= 0) {
+      return;
+    }
+
+    await invoke("ds5_play_controller_notification_sound", { sound }).catch(() => undefined);
+  }, []);
+
+  const testControllerNotificationSound = useCallback(async (sound: ControllerNotificationSound) => {
+    await playControllerNotificationSound(sound);
+  }, [playControllerNotificationSound]);
+
+  const updateLowBatterySoundState = useCallback((device: HIDDevice, nextBatteryText: string) => {
+    const deviceKey = getDeviceKey(device);
+    const percent = parseBatteryPercent(nextBatteryText);
+    if (!lowBatteryNotificationEnabledRef.current || percent === null || percent > LOW_BATTERY_THRESHOLD_PERCENT) {
+      lowBatteryNotifiedKeyRef.current.delete(deviceKey);
+      return;
+    }
+
+    if (!lowBatteryNotifiedKeyRef.current.has(deviceKey)) {
+      lowBatteryNotifiedKeyRef.current.add(deviceKey);
+      void playControllerNotificationSound("lowBattery");
+    }
+  }, [playControllerNotificationSound]);
+
   const testLowBatteryNotification = useCallback(async () => {
-    await enqueueLowBatteryNotification(
-      t("notifications.lowBatteryTitle"),
-      t("notifications.lowBatteryBody", { device: t("notifications.testDevice"), battery: "15%" }),
-    );
-  }, [t]);
+    await Promise.all([
+      enqueueLowBatteryNotification(
+        t("notifications.lowBatteryTitle"),
+        t("notifications.lowBatteryBody", { device: t("notifications.testDevice"), battery: "15%" }),
+      ),
+      playControllerNotificationSound("lowBattery"),
+    ]);
+  }, [playControllerNotificationSound, t]);
 
   const handleConnectedDeviceDisconnected = useCallback((expectedDisconnect = false) => {
     if (!expectedDisconnect) {
       shouldReturnHomeRef.current = false;
       setShouldReturnHome(false);
       setError(t("errors.disconnected"));
+      void playControllerNotificationSound("disconnected");
     }
 
     expectedUsbDisconnectRef.current = false;
@@ -285,7 +370,7 @@ export function useDs5Bridge(): UseDs5BridgeResult {
       preserveConfig: expectedDisconnect || shouldReturnHomeRef.current,
       preserveReconnectTracking: expectedDisconnect || shouldReturnHomeRef.current,
     });
-  }, [clearConnectedDevice, t]);
+  }, [clearConnectedDevice, playControllerNotificationSound, t]);
 
   const attachClient = useCallback(
     async (nextClient: Ds5BridgeHidClient) => {
@@ -304,6 +389,12 @@ export function useDs5Bridge(): UseDs5BridgeResult {
         setError(null);
       } finally {
         setOperation(null);
+      }
+
+      if (isSwitchReconnect || suppressNextConnectSoundRef.current) {
+        suppressNextConnectSoundRef.current = false;
+      } else {
+        void playControllerNotificationSound("connected");
       }
 
       try {
@@ -327,11 +418,12 @@ export function useDs5Bridge(): UseDs5BridgeResult {
       const nextBatteryText = await nextClient.readBatteryText(BATTERY_LISTEN_TIMEOUT_MS).catch(() => null);
       if (nextBatteryText) {
         setBatteryText(nextBatteryText);
+        updateLowBatterySoundState(nextClient.device, nextBatteryText);
       }
       await refreshPicoInfo(nextClient, setFirmwareVersion, setSignalStrength).catch(() => undefined);
       setSwitchReadyToken((token) => token + 1);
     },
-    [clearReconnectTracking, readConfigWithClient],
+    [clearReconnectTracking, playControllerNotificationSound, readConfigWithClient, updateLowBatterySoundState],
   );
 
   const connectDeviceSilently = useCallback(async (device: HIDDevice) => {
@@ -428,6 +520,7 @@ export function useDs5Bridge(): UseDs5BridgeResult {
 
         if (needsReconnect) {
           expectedUsbDisconnectRef.current = true;
+          suppressNextConnectSoundRef.current = true;
           requireManualSelectionRef.current = false;
           autoConnectDeviceKeyRef.current = null;
           reconnectingDevicePortKeyRef.current = getDevicePortKey(nextClient.device);
@@ -585,6 +678,23 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   }, [refreshAuthorizedDevices]);
 
   useEffect(() => {
+    void invoke<boolean>("ds5_get_controller_notification_sound_enabled")
+      .then((enabled) => {
+        controllerNotificationSoundEnabledRef.current = enabled;
+        setControllerNotificationSoundEnabledState(enabled);
+      })
+      .catch(() => undefined);
+
+    void invoke<ControllerNotificationSoundVolumes>("ds5_get_controller_notification_sound_volumes")
+      .then((volumes) => {
+        const normalizedVolumes = normalizeNotificationVolumes(volumes);
+        controllerNotificationSoundVolumesRef.current = normalizedVolumes;
+        setControllerNotificationSoundVolumes(normalizedVolumes);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     void invoke<boolean>("ds5_get_low_battery_notification_enabled")
       .then((enabled) => {
         lowBatteryNotificationEnabledRef.current = enabled;
@@ -699,6 +809,7 @@ export function useDs5Bridge(): UseDs5BridgeResult {
         void connectedClient.readBatteryText(BATTERY_LISTEN_TIMEOUT_MS).then((nextBatteryText) => {
           if (nextBatteryText && clientRef.current === connectedClient) {
             setBatteryText(nextBatteryText);
+            updateLowBatterySoundState(connectedClient.device, nextBatteryText);
           }
         }).catch(() => {
           if (clientRef.current === connectedClient && !connectedClient.device.opened) {
@@ -710,7 +821,7 @@ export function useDs5Bridge(): UseDs5BridgeResult {
 
     const intervalId = window.setInterval(refreshBatteryInfo, BATTERY_REFRESH_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
-  }, [handleConnectedDeviceDisconnected, refreshAuthorizedDevices, supported]);
+  }, [handleConnectedDeviceDisconnected, refreshAuthorizedDevices, supported, updateLowBatterySoundState]);
 
   useEffect(() => {
     const batteries = authorizedDevices.map((device, index) => {
@@ -805,10 +916,16 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     isDefaultConfig,
     needsUsbReconnect,
     lowBatteryNotificationEnabled,
+    controllerNotificationSoundEnabled,
+    controllerNotificationSoundVolumes,
     switchReadyToken,
     setDraftField,
     setLowBatteryNotificationEnabled,
+    setControllerNotificationSoundEnabled,
+    setControllerNotificationSoundVolume,
+    resetControllerNotificationSoundVolumes,
     testLowBatteryNotification,
+    testControllerNotificationSound,
     refreshAuthorizedDevices,
     connect,
     connectAuthorized,
@@ -821,6 +938,24 @@ export function useDs5Bridge(): UseDs5BridgeResult {
       setShouldReturnHome(false);
     },
     clearError: () => setError(null),
+  };
+}
+
+const DEFAULT_CONTROLLER_NOTIFICATION_SOUND_VOLUMES: ControllerNotificationSoundVolumes = {
+  connected: 0.65,
+  disconnected: 0.65,
+  lowBattery: 0.75,
+};
+
+function normalizeNotificationVolume(volume: number): number {
+  return Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : 0;
+}
+
+function normalizeNotificationVolumes(volumes: Partial<ControllerNotificationSoundVolumes> | null | undefined): ControllerNotificationSoundVolumes {
+  return {
+    connected: normalizeNotificationVolume(volumes?.connected ?? DEFAULT_CONTROLLER_NOTIFICATION_SOUND_VOLUMES.connected),
+    disconnected: normalizeNotificationVolume(volumes?.disconnected ?? DEFAULT_CONTROLLER_NOTIFICATION_SOUND_VOLUMES.disconnected),
+    lowBattery: normalizeNotificationVolume(volumes?.lowBattery ?? DEFAULT_CONTROLLER_NOTIFICATION_SOUND_VOLUMES.lowBattery),
   };
 }
 

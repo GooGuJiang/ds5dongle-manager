@@ -9,8 +9,8 @@ import { VscChromeClose, VscChromeMaximize, VscChromeMinimize } from "react-icon
 import { Tooltip } from "react-tooltip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Switch } from "@/components/ui/switch";
 import { LanguageSwitcher } from "./LanguageSwitcher";
+import { SoftwareSettingsDialog, type ControllerNotificationSoundVolumes } from "./SoftwareSettingsDialog";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import type { ThemeMode } from "@/hooks/useTheme";
 
@@ -30,6 +30,8 @@ interface SoftwareSettingsPayload {
   closeToTray: boolean;
   closeToTrayAsked: boolean;
   lowBatteryNotificationEnabled: boolean;
+  controllerNotificationSoundEnabled: boolean;
+  controllerNotificationSoundVolumes: ControllerNotificationSoundVolumes;
 }
 
 interface AppHeaderProps {
@@ -51,7 +53,13 @@ interface AppHeaderProps {
   onResetToDefaults?: () => void;
   lowBatteryNotificationEnabled?: boolean;
   onLowBatteryNotificationEnabledChange?: (enabled: boolean) => Promise<void>;
+  controllerNotificationSoundEnabled?: boolean;
+  controllerNotificationSoundVolumes: ControllerNotificationSoundVolumes;
+  onControllerNotificationSoundEnabledChange?: (enabled: boolean) => Promise<void>;
+  onControllerNotificationSoundVolumeChange?: (sound: keyof ControllerNotificationSoundVolumes, volume: number) => Promise<void>;
+  onResetControllerNotificationSoundVolumes?: () => Promise<void>;
   onTestLowBatteryNotification?: () => Promise<void>;
+  onTestControllerNotificationSound?: (sound: keyof ControllerNotificationSoundVolumes) => Promise<void>;
 }
 
 export function AppHeader({
@@ -73,7 +81,13 @@ export function AppHeader({
   onResetToDefaults,
   lowBatteryNotificationEnabled = true,
   onLowBatteryNotificationEnabledChange,
+  controllerNotificationSoundEnabled = true,
+  controllerNotificationSoundVolumes,
+  onControllerNotificationSoundEnabledChange,
+  onControllerNotificationSoundVolumeChange,
+  onResetControllerNotificationSoundVolumes,
   onTestLowBatteryNotification,
+  onTestControllerNotificationSound,
 }: AppHeaderProps) {
   const { t } = useTranslation();
   const appWindow = getCurrentWindow();
@@ -208,10 +222,6 @@ export function AppHeader({
     }
 
     void appWindow.close();
-  };
-
-  const updateLowBatteryNotification = (checked: boolean) => {
-    void onLowBatteryNotificationEnabledChange?.(checked);
   };
 
   return (
@@ -392,44 +402,21 @@ export function AppHeader({
       </div>
       <div ref={tooltipPortalRef} />
       <Tooltip id="header-device-actions-tooltip" place="bottom" positionStrategy="fixed" portalRoot={tooltipPortalRoot} />
-      <Dialog open={softwareSettingsOpen} onOpenChange={setSoftwareSettingsOpen}>
-        <DialogContent className="software-settings-dialog" data-no-drag>
-          <DialogHeader>
-            <DialogTitle>{t("softwareSettings.title")}</DialogTitle>
-            <DialogDescription>{t("softwareSettings.description")}</DialogDescription>
-          </DialogHeader>
-          <div className="software-settings-option">
-            <div>
-              <strong>{t("softwareSettings.closeToTray")}</strong>
-              <p>{t("softwareSettings.closeToTrayDescription")}</p>
-            </div>
-            <Switch checked={closeToTray} onCheckedChange={updateCloseToTray} aria-label={t("softwareSettings.closeToTray")} />
-          </div>
-          <div className="software-settings-option">
-            <div>
-              <strong>{t("softwareSettings.lowBatteryNotification")}</strong>
-              <p>{t("softwareSettings.lowBatteryNotificationDescription")}</p>
-            </div>
-            <div className="software-settings-option-actions">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="software-settings-test-notification-button"
-                onClick={() => void onTestLowBatteryNotification?.()}
-                disabled={!lowBatteryNotificationEnabled}
-              >
-                {t("softwareSettings.testNotification")}
-              </Button>
-              <Switch
-                checked={lowBatteryNotificationEnabled}
-                onCheckedChange={updateLowBatteryNotification}
-                aria-label={t("softwareSettings.lowBatteryNotification")}
-              />
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <SoftwareSettingsDialog
+        open={softwareSettingsOpen}
+        closeToTray={closeToTray}
+        lowBatteryNotificationEnabled={lowBatteryNotificationEnabled}
+        controllerNotificationSoundEnabled={controllerNotificationSoundEnabled}
+        controllerNotificationSoundVolumes={controllerNotificationSoundVolumes}
+        onOpenChange={setSoftwareSettingsOpen}
+        onCloseToTrayChange={updateCloseToTray}
+        onLowBatteryNotificationEnabledChange={onLowBatteryNotificationEnabledChange}
+        onControllerNotificationSoundEnabledChange={onControllerNotificationSoundEnabledChange}
+        onControllerNotificationSoundVolumeChange={onControllerNotificationSoundVolumeChange}
+        onResetControllerNotificationSoundVolumes={onResetControllerNotificationSoundVolumes}
+        onTestLowBatteryNotification={onTestLowBatteryNotification}
+        onTestControllerNotificationSound={onTestControllerNotificationSound}
+      />
       <Dialog open={closeBehaviorDialogOpen} onOpenChange={setCloseBehaviorDialogOpen}>
         <DialogContent className="software-settings-dialog" data-no-drag>
           <DialogHeader>

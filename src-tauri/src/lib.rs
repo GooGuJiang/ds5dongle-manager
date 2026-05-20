@@ -6,7 +6,10 @@ use commands::{
     ds5_get_software_settings,
     ds5_get_system_info, ds5_list_devices, ds5_read_feature_report, ds5_read_input_report, ds5_send_feature_report,
     ds5_get_close_to_tray, ds5_set_close_to_tray, ds5_start_device_monitor,
-    ds5_get_low_battery_notification_enabled, ds5_set_low_battery_notification_enabled,
+    ds5_get_controller_notification_sound_enabled, ds5_get_controller_notification_sound_volumes,
+    ds5_get_low_battery_notification_enabled, ds5_play_controller_notification_sound,
+    ds5_reset_controller_notification_sound_volumes, ds5_set_controller_notification_sound_enabled,
+    ds5_set_controller_notification_sound_volume, ds5_set_low_battery_notification_enabled,
     ds5_update_tray_batteries, ds5_update_tray_labels,
 };
 use state::{DeviceMonitorState, TrayLabels, TrayState};
@@ -114,7 +117,13 @@ pub fn run() {
             ds5_set_close_to_tray,
             ds5_get_close_to_tray,
             ds5_set_low_battery_notification_enabled,
-            ds5_get_low_battery_notification_enabled
+            ds5_get_low_battery_notification_enabled,
+            ds5_set_controller_notification_sound_enabled,
+            ds5_get_controller_notification_sound_enabled,
+            ds5_get_controller_notification_sound_volumes,
+            ds5_set_controller_notification_sound_volume,
+            ds5_reset_controller_notification_sound_volumes,
+            ds5_play_controller_notification_sound
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

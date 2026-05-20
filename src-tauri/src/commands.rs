@@ -1,25 +1,81 @@
 use crate::hid::{collect_supported_devices, devices_snapshot, error_to_string, open_device_by_path, HidDeviceInfoDto};
 use crate::state::{DeviceMonitorState, TrayState};
 use hidapi::HidApi;
+use rodio::{Decoder, OutputStream, Sink};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::path::BaseDirectory;
 use tauri_plugin_notification::NotificationExt;
 
 const SOFTWARE_SETTINGS_FILE_NAME: &str = "software-settings.json";
 const LOW_BATTERY_THRESHOLD_PERCENT: u8 = 15;
+const CONTROLLER_CONNECTED_SOUND: &str = "resources/sounds/controller-connected.wav";
+const CONTROLLER_DISCONNECTED_SOUND: &str = "resources/sounds/controller-disconnected.wav";
+const CONTROLLER_LOW_BATTERY_SOUND: &str = "resources/sounds/controller-low-battery.wav";
 
-#[derive(Default, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
 struct SoftwareSettings {
     close_to_tray: bool,
     close_to_tray_asked: bool,
     low_battery_notification_enabled: bool,
+    controller_notification_sound_enabled: bool,
+    controller_notification_sound_volumes: ControllerNotificationSoundVolumes,
+}
+
+impl Default for SoftwareSettings {
+    fn default() -> Self {
+        Self {
+            close_to_tray: false,
+            close_to_tray_asked: false,
+            low_battery_notification_enabled: true,
+            controller_notification_sound_enabled: true,
+            controller_notification_sound_volumes: ControllerNotificationSoundVolumes::default(),
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ControllerNotificationSoundVolumes {
+    connected: f32,
+    disconnected: f32,
+    low_battery: f32,
+}
+
+impl Default for ControllerNotificationSoundVolumes {
+    fn default() -> Self {
+        Self {
+            connected: 0.65,
+            disconnected: 0.65,
+            low_battery: 0.75,
+        }
+    }
+}
+
+impl ControllerNotificationSoundVolumes {
+    fn normalized(self) -> Self {
+        Self {
+            connected: normalize_volume(self.connected),
+            disconnected: normalize_volume(self.disconnected),
+            low_battery: normalize_volume(self.low_battery),
+        }
+    }
+
+    fn volume_for(&self, sound: &ControllerNotificationSound) -> f32 {
+        match sound {
+            ControllerNotificationSound::Connected => self.connected,
+            ControllerNotificationSound::Disconnected => self.disconnected,
+            ControllerNotificationSound::LowBattery => self.low_battery,
+        }
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -28,6 +84,8 @@ pub struct SoftwareSettingsDto {
     pub close_to_tray: bool,
     pub close_to_tray_asked: bool,
     pub low_battery_notification_enabled: bool,
+    pub controller_notification_sound_enabled: bool,
+    pub controller_notification_sound_volumes: ControllerNotificationSoundVolumes,
 }
 
 #[derive(Serialize)]
@@ -222,6 +280,7 @@ fn process_low_battery_notifications(
             .title("Controller battery low")
             .body(body)
             .show();
+        let _ = play_controller_notification_sound(app, ControllerNotificationSound::LowBattery);
     }
 
     Ok(())
@@ -340,6 +399,112 @@ pub fn ds5_get_low_battery_notification_enabled(app: AppHandle) -> Result<bool, 
     Ok(load_software_settings(&app)?.low_battery_notification_enabled)
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ControllerNotificationSound {
+    Connected,
+    Disconnected,
+    LowBattery,
+}
+
+#[tauri::command]
+pub fn ds5_set_controller_notification_sound_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = load_software_settings(&app)?;
+    settings.controller_notification_sound_enabled = enabled;
+    save_software_settings(&app, settings.clone())?;
+    emit_software_settings_changed(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn ds5_get_controller_notification_sound_enabled(app: AppHandle) -> Result<bool, String> {
+    Ok(load_software_settings(&app)?.controller_notification_sound_enabled)
+}
+
+#[tauri::command]
+pub fn ds5_get_controller_notification_sound_volumes(app: AppHandle) -> Result<ControllerNotificationSoundVolumes, String> {
+    Ok(load_software_settings(&app)?.controller_notification_sound_volumes.normalized())
+}
+
+#[tauri::command]
+pub fn ds5_set_controller_notification_sound_volume(
+    app: AppHandle,
+    sound: ControllerNotificationSound,
+    volume: f32,
+) -> Result<ControllerNotificationSoundVolumes, String> {
+    let mut settings = load_software_settings(&app)?;
+    let normalized_volume = normalize_volume(volume);
+    match sound {
+        ControllerNotificationSound::Connected => settings.controller_notification_sound_volumes.connected = normalized_volume,
+        ControllerNotificationSound::Disconnected => settings.controller_notification_sound_volumes.disconnected = normalized_volume,
+        ControllerNotificationSound::LowBattery => settings.controller_notification_sound_volumes.low_battery = normalized_volume,
+    }
+    settings.controller_notification_sound_volumes = settings.controller_notification_sound_volumes.normalized();
+    save_software_settings(&app, settings.clone())?;
+    emit_software_settings_changed(&app, settings.clone());
+    Ok(settings.controller_notification_sound_volumes)
+}
+
+#[tauri::command]
+pub fn ds5_reset_controller_notification_sound_volumes(app: AppHandle) -> Result<ControllerNotificationSoundVolumes, String> {
+    let mut settings = load_software_settings(&app)?;
+    settings.controller_notification_sound_volumes = ControllerNotificationSoundVolumes::default();
+    save_software_settings(&app, settings.clone())?;
+    emit_software_settings_changed(&app, settings.clone());
+    Ok(settings.controller_notification_sound_volumes)
+}
+
+#[tauri::command]
+pub fn ds5_play_controller_notification_sound(app: AppHandle, sound: ControllerNotificationSound) -> Result<(), String> {
+    play_controller_notification_sound(&app, sound)
+}
+
+fn play_controller_notification_sound(app: &AppHandle, sound: ControllerNotificationSound) -> Result<(), String> {
+    let settings = load_software_settings(app)?;
+    if !settings.controller_notification_sound_enabled {
+        return Ok(());
+    }
+
+    let volume = settings.controller_notification_sound_volumes.normalized().volume_for(&sound);
+    if volume <= 0.0 {
+        return Ok(());
+    }
+
+    let resource = match sound {
+        ControllerNotificationSound::Connected => CONTROLLER_CONNECTED_SOUND,
+        ControllerNotificationSound::Disconnected => CONTROLLER_DISCONNECTED_SOUND,
+        ControllerNotificationSound::LowBattery => CONTROLLER_LOW_BATTERY_SOUND,
+    };
+    let sound_path = app
+        .path()
+        .resolve(resource, BaseDirectory::Resource)
+        .map_err(|error| error.to_string())?;
+
+    thread::spawn(move || {
+        if let Ok(file) = fs::File::open(sound_path) {
+            if let Ok((_stream, stream_handle)) = OutputStream::try_default() {
+                if let Ok(sink) = Sink::try_new(&stream_handle) {
+                    sink.set_volume(volume);
+                    if let Ok(source) = Decoder::new(BufReader::new(file)) {
+                        sink.append(source);
+                        sink.sleep_until_end();
+                    }
+                }
+            }
+        }
+    });
+
+    Ok(())
+}
+
+fn normalize_volume(volume: f32) -> f32 {
+    if volume.is_finite() {
+        volume.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
 fn software_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_config_dir()
@@ -393,6 +558,8 @@ impl From<SoftwareSettings> for SoftwareSettingsDto {
             close_to_tray: settings.close_to_tray,
             close_to_tray_asked: settings.close_to_tray_asked,
             low_battery_notification_enabled: settings.low_battery_notification_enabled,
+            controller_notification_sound_enabled: settings.controller_notification_sound_enabled,
+            controller_notification_sound_volumes: settings.controller_notification_sound_volumes.normalized(),
         }
     }
 }
