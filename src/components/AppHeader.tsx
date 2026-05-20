@@ -413,8 +413,9 @@ export function AppHeader({
             <div className="software-settings-option-actions">
               <Button
                 type="button"
-                variant="ghost"
+                variant="secondary"
                 size="sm"
+                className="software-settings-test-notification-button"
                 onClick={() => void onTestLowBatteryNotification?.()}
                 disabled={!lowBatteryNotificationEnabled}
               >

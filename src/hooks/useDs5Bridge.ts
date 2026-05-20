@@ -269,7 +269,7 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   const testLowBatteryNotification = useCallback(async () => {
     await enqueueLowBatteryNotification(
       t("notifications.lowBatteryTitle"),
-      t("notifications.lowBatteryBody", { device: t("notifications.testDevice"), battery: "20%" }),
+      t("notifications.lowBatteryBody", { device: t("notifications.testDevice"), battery: "15%" }),
     );
   }, [t]);
 

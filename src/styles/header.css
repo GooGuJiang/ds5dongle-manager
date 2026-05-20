@@ -207,6 +207,49 @@
   white-space: nowrap;
 }
 
+.software-settings-test-notification-button {
+  color: #155e75;
+  background: rgb(6 182 212 / 18%);
+  border: 1px solid rgb(6 182 212 / 34%);
+  box-shadow: 0 8px 18px rgb(6 182 212 / 10%);
+}
+
+.software-settings-test-notification-button:hover,
+.software-settings-test-notification-button:focus-visible {
+  color: #0f4f64;
+  background: rgb(6 182 212 / 26%);
+  border-color: rgb(6 182 212 / 50%);
+}
+
+.software-settings-test-notification-button:disabled {
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--background) 78%, var(--muted));
+  border-color: var(--border);
+  box-shadow: none;
+  opacity: 0.82;
+}
+
+.dark .software-settings-test-notification-button {
+  color: #67e8f9;
+  background: rgb(6 182 212 / 18%);
+  border-color: rgb(103 232 249 / 32%);
+  box-shadow: 0 8px 18px rgb(6 182 212 / 12%);
+}
+
+.dark .software-settings-test-notification-button:hover,
+.dark .software-settings-test-notification-button:focus-visible {
+  color: #a5f3fc;
+  background: rgb(6 182 212 / 28%);
+  border-color: rgb(103 232 249 / 50%);
+}
+
+.dark .software-settings-test-notification-button:disabled {
+  color: var(--muted-foreground);
+  background: rgb(148 163 184 / 12%);
+  border-color: rgb(148 163 184 / 20%);
+  box-shadow: none;
+}
+
 .close-behavior-actions {
   justify-content: flex-end;
   width: 100%;
