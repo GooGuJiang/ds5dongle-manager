@@ -277,6 +277,22 @@ export function getDeviceKey(device: HIDDevice): string {
   return `session:${nextDeviceSessionId++}`;
 }
 
+export function getDevicePortKey(device: HIDDevice): string {
+  const info = (device as unknown as TauriHidDevice).info;
+  const path = info?.path.toLowerCase();
+  if (!path) {
+    return getDeviceKey(device);
+  }
+
+  const usbInstance = path.match(/vid_[0-9a-f]{4}&pid_[0-9a-f]{4}[^#]*/)?.[0];
+  const normalizedInstance = usbInstance?.replace(/&mi_[0-9a-f]{2}.*/, "");
+  if (normalizedInstance) {
+    return `usb:${device.vendorId}:${device.productId}:${normalizedInstance}`;
+  }
+
+  return `path:${path.replace(/&col\d+/, "")}`;
+}
+
 export function getControllerIconSrc(device: HIDDevice | null): string {
   return device?.productId === DUALSENSE_EDGE_PRODUCT_ID ? "/images/ps5-controller-edge.webp" : "/svg/ps5-controller-gamepad-seeklogo.svg";
 }

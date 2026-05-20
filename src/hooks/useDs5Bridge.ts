@@ -19,6 +19,7 @@ import {
   WEBHID_UNAVAILABLE_ERROR,
   getDeviceLabel,
   getDeviceKey,
+  getDevicePortKey,
   startDeviceMonitor,
   tauriDeviceInfosToHidDevices,
   webHidAvailable,
@@ -31,6 +32,7 @@ const BATTERY_REFRESH_INTERVAL_MS = 15_000;
 const DEVICE_DISCOVERY_INTERVAL_MS = 2_000;
 const PICO_INFO_REFRESH_INTERVAL_MS = 5_000;
 const BATTERY_LISTEN_TIMEOUT_MS = 1_200;
+const SWITCH_RECONNECT_WINDOW_MS = 30_000;
 const LOW_BATTERY_THRESHOLD_PERCENT = 15;
 
 export interface UseDs5BridgeResult {
@@ -60,6 +62,7 @@ export interface UseDs5BridgeResult {
   isDefaultConfig: boolean;
   needsUsbReconnect: boolean;
   lowBatteryNotificationEnabled: boolean;
+  switchReadyToken: number;
   setDraftField: <Key extends keyof ConfigBody>(field: Key, value: ConfigBody[Key]) => void;
   setLowBatteryNotificationEnabled: (enabled: boolean) => Promise<void>;
   testLowBatteryNotification: () => Promise<void>;
@@ -88,6 +91,7 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   const [lowBatteryNotificationEnabled, setLowBatteryNotificationEnabledState] = useState(true);
   const [shouldReturnHome, setShouldReturnHome] = useState(false);
   const shouldReturnHomeRef = useRef(false);
+  const [switchReadyToken, setSwitchReadyToken] = useState(0);
   const [batteryText, setBatteryText] = useState("--");
   const [firmwareVersion, setFirmwareVersion] = useState("--");
   const [signalStrength, setSignalStrength] = useState("--");
@@ -108,6 +112,8 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   const expectedUsbDisconnectRef = useRef(false);
   const requireManualSelectionRef = useRef(false);
   const autoConnectDeviceKeyRef = useRef<string | null>(null);
+  const reconnectingDevicePortKeyRef = useRef<string | null>(null);
+  const reconnectingDeviceTimeoutRef = useRef<number | null>(null);
   const authorizedDeviceInfoScanIdRef = useRef(0);
   const pendingChangedFieldsRef = useRef<Set<keyof ConfigBody>>(new Set());
   const lowBatteryNotificationEnabledRef = useRef(true);
@@ -210,26 +216,44 @@ export function useDs5Bridge(): UseDs5BridgeResult {
       setDraft(nextConfig);
       setSaveState("idle");
       setError(null);
+      return nextConfig;
     } finally {
       setOperation(null);
     }
   }, []);
 
-  const clearConnectedDevice = useCallback(() => {
+  const clearReconnectTracking = useCallback(() => {
+    reconnectingDevicePortKeyRef.current = null;
+    if (reconnectingDeviceTimeoutRef.current !== null) {
+      window.clearTimeout(reconnectingDeviceTimeoutRef.current);
+      reconnectingDeviceTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearConnectedDevice = useCallback((options: { preserveConfig?: boolean; preserveReconnectTracking?: boolean } = {}) => {
     clientRef.current = null;
-    configRef.current = null;
-    draftRef.current = DEFAULT_CONFIG;
     usbEffectiveConfigRef.current = null;
+    autoConnectDeviceKeyRef.current = null;
     setClient(null);
-    setConfig(null);
-    setDraft(DEFAULT_CONFIG);
+
+    if (!options.preserveReconnectTracking) {
+      clearReconnectTracking();
+    }
+
+    if (!options.preserveConfig && !shouldReturnHomeRef.current) {
+      configRef.current = null;
+      draftRef.current = DEFAULT_CONFIG;
+      setConfig(null);
+      setDraft(DEFAULT_CONFIG);
+      setSaveState("idle");
+    }
+
     setNeedsUsbReconnect(false);
-    setSaveState("idle");
     setBatteryText("--");
     setFirmwareVersion("--");
     setSignalStrength("--");
     setDeviceSerialNumber("--");
-  }, []);
+  }, [clearReconnectTracking]);
 
   const setLowBatteryNotificationEnabled = useCallback(async (enabled: boolean) => {
     lowBatteryNotificationEnabledRef.current = enabled;
@@ -241,30 +265,6 @@ export function useDs5Bridge(): UseDs5BridgeResult {
 
     await invoke("ds5_set_low_battery_notification_enabled", { enabled });
   }, []);
-
-  const notifyLowBatteryIfNeeded = useCallback((device: HIDDevice, nextBatteryText: string) => {
-    if (!lowBatteryNotificationEnabledRef.current) {
-      return;
-    }
-
-    const percent = parseBatteryPercent(nextBatteryText);
-    const deviceKey = getDeviceKey(device);
-
-    if (percent === null || percent > LOW_BATTERY_THRESHOLD_PERCENT) {
-      lowBatteryNotifiedKeyRef.current.delete(deviceKey);
-      return;
-    }
-
-    if (lowBatteryNotifiedKeyRef.current.has(deviceKey)) {
-      return;
-    }
-
-    lowBatteryNotifiedKeyRef.current.add(deviceKey);
-    void enqueueLowBatteryNotification(
-      t("notifications.lowBatteryTitle"),
-      t("notifications.lowBatteryBody", { device: getDeviceLabel(device), battery: nextBatteryText }),
-    );
-  }, [t]);
 
   const testLowBatteryNotification = useCallback(async () => {
     await enqueueLowBatteryNotification(
@@ -281,11 +281,15 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     }
 
     expectedUsbDisconnectRef.current = false;
-    clearConnectedDevice();
+    clearConnectedDevice({
+      preserveConfig: expectedDisconnect || shouldReturnHomeRef.current,
+      preserveReconnectTracking: expectedDisconnect || shouldReturnHomeRef.current,
+    });
   }, [clearConnectedDevice, t]);
 
   const attachClient = useCallback(
     async (nextClient: Ds5BridgeHidClient) => {
+      const isSwitchReconnect = shouldReturnHomeRef.current || Boolean(reconnectingDevicePortKeyRef.current);
       setOperation("connecting");
       const previousClient = clientRef.current;
       try {
@@ -295,28 +299,39 @@ export function useDs5Bridge(): UseDs5BridgeResult {
         await nextClient.open();
         clientRef.current = nextClient;
         setClient(nextClient);
-        shouldReturnHomeRef.current = false;
-        setShouldReturnHome(false);
+        clearReconnectTracking();
         requireManualSelectionRef.current = false;
         setError(null);
       } finally {
         setOperation(null);
       }
-      await readConfigWithClient(nextClient, true);
+
+      try {
+        await readConfigWithClient(nextClient, true);
+      } catch (cause) {
+        if (!isSwitchReconnect) {
+          throw cause;
+        }
+        setError(null);
+        setNeedsUsbReconnect(false);
+      }
+
       try {
         setDeviceSerialNumber((await nextClient.readSerialNumber()) || "--");
       } catch {
-        setDeviceSerialNumber("--");
+        if (!isSwitchReconnect) {
+          setDeviceSerialNumber("--");
+        }
       }
 
       const nextBatteryText = await nextClient.readBatteryText(BATTERY_LISTEN_TIMEOUT_MS).catch(() => null);
       if (nextBatteryText) {
         setBatteryText(nextBatteryText);
-        notifyLowBatteryIfNeeded(nextClient.device, nextBatteryText);
       }
-      await refreshPicoInfo(nextClient, setFirmwareVersion, setSignalStrength);
+      await refreshPicoInfo(nextClient, setFirmwareVersion, setSignalStrength).catch(() => undefined);
+      setSwitchReadyToken((token) => token + 1);
     },
-    [notifyLowBatteryIfNeeded, readConfigWithClient],
+    [clearReconnectTracking, readConfigWithClient],
   );
 
   const connectDeviceSilently = useCallback(async (device: HIDDevice) => {
@@ -327,7 +342,9 @@ export function useDs5Bridge(): UseDs5BridgeResult {
         autoConnectDeviceKeyRef.current = null;
       }
 
-      setError(errorMessage(cause, t));
+      if (!shouldReturnHomeRef.current && !reconnectingDevicePortKeyRef.current) {
+        setError(errorMessage(cause, t));
+      }
       setOperation(null);
     }
   }, [attachClient, t]);
@@ -343,7 +360,9 @@ export function useDs5Bridge(): UseDs5BridgeResult {
         return;
       }
 
-      setError(errorMessage(cause, t));
+      if (!shouldReturnHomeRef.current && !reconnectingDevicePortKeyRef.current) {
+        setError(errorMessage(cause, t));
+      }
       setOperation(null);
     }
   }, [attachClient, refreshAuthorizedDevices, t]);
@@ -409,7 +428,16 @@ export function useDs5Bridge(): UseDs5BridgeResult {
 
         if (needsReconnect) {
           expectedUsbDisconnectRef.current = true;
-          requireManualSelectionRef.current = true;
+          requireManualSelectionRef.current = false;
+          autoConnectDeviceKeyRef.current = null;
+          reconnectingDevicePortKeyRef.current = getDevicePortKey(nextClient.device);
+          if (reconnectingDeviceTimeoutRef.current !== null) {
+            window.clearTimeout(reconnectingDeviceTimeoutRef.current);
+          }
+          reconnectingDeviceTimeoutRef.current = window.setTimeout(() => {
+            reconnectingDevicePortKeyRef.current = null;
+            reconnectingDeviceTimeoutRef.current = null;
+          }, SWITCH_RECONNECT_WINDOW_MS);
           // 先设置 shouldReturnHome（ref 同步 + state 异步）作为 USB 重枚举期间的设置页保活标记，
           // 防止 disconnect 事件中 clearConnectedDevice 将 client 设为 null 后 App.tsx 的 useEffect 提前切换到主页。
           // 设备重新连接成功后会在 attachClient 中清理该标记，不再强制回到主页，避免设置页闪动。
@@ -422,7 +450,7 @@ export function useDs5Bridge(): UseDs5BridgeResult {
             // This is expected for polling-rate or controller-mode changes, so keep the UI quiet and
             // require the user to select the device again manually.
           }
-          clearConnectedDevice();
+          clearConnectedDevice({ preserveConfig: true, preserveReconnectTracking: true });
           break;
         } else {
           setNeedsUsbReconnect(false);
@@ -626,7 +654,20 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   }, [authorizedDevices, scanAuthorizedDeviceInfo]);
 
   useEffect(() => {
-    if (!supported || clientRef.current || operation) {
+    if (!supported || clientRef.current || operation === "connecting" || operation === "reading") {
+      return;
+    }
+
+    const reconnectingDevicePortKey = reconnectingDevicePortKeyRef.current;
+    if (reconnectingDevicePortKey) {
+      const reconnectedDevice = authorizedDevices.find(
+        (device) => Ds5BridgeHidClient.isSupportedDevice(device) && getDevicePortKey(device) === reconnectingDevicePortKey,
+      );
+
+      if (reconnectedDevice) {
+        autoConnectDeviceKeyRef.current = null;
+        void connectDeviceSilently(reconnectedDevice);
+      }
       return;
     }
 
@@ -658,7 +699,6 @@ export function useDs5Bridge(): UseDs5BridgeResult {
         void connectedClient.readBatteryText(BATTERY_LISTEN_TIMEOUT_MS).then((nextBatteryText) => {
           if (nextBatteryText && clientRef.current === connectedClient) {
             setBatteryText(nextBatteryText);
-            notifyLowBatteryIfNeeded(connectedClient.device, nextBatteryText);
           }
         }).catch(() => {
           if (clientRef.current === connectedClient && !connectedClient.device.opened) {
@@ -670,12 +710,13 @@ export function useDs5Bridge(): UseDs5BridgeResult {
 
     const intervalId = window.setInterval(refreshBatteryInfo, BATTERY_REFRESH_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
-  }, [handleConnectedDeviceDisconnected, notifyLowBatteryIfNeeded, refreshAuthorizedDevices, supported]);
+  }, [handleConnectedDeviceDisconnected, refreshAuthorizedDevices, supported]);
 
   useEffect(() => {
     const batteries = authorizedDevices.map((device, index) => {
       const deviceKey = getDeviceKey(device);
       return {
+        deviceKey,
         label: t("tray.controllerLabel", { index: index + 1 }),
         batteryText: clientRef.current?.device === device ? batteryText : (authorizedDeviceBatteryText[deviceKey] ?? "--"),
       };
@@ -731,6 +772,9 @@ export function useDs5Bridge(): UseDs5BridgeResult {
       if (savedStatusTimerRef.current !== null) {
         window.clearTimeout(savedStatusTimerRef.current);
       }
+      if (reconnectingDeviceTimeoutRef.current !== null) {
+        window.clearTimeout(reconnectingDeviceTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -761,6 +805,7 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     isDefaultConfig,
     needsUsbReconnect,
     lowBatteryNotificationEnabled,
+    switchReadyToken,
     setDraftField,
     setLowBatteryNotificationEnabled,
     testLowBatteryNotification,

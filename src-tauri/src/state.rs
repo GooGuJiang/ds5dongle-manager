@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use serde::Deserialize;
@@ -12,6 +13,7 @@ pub struct TrayState {
     pub labels: Mutex<TrayLabels>,
     pub close_to_tray: Mutex<bool>,
     pub close_to_tray_asked: Mutex<bool>,
+    pub low_battery_notified_keys: Mutex<HashSet<String>>,
     pub open_window_item: Mutex<Option<MenuItem<Wry>>>,
     pub battery_item: Mutex<Option<MenuItem<Wry>>>,
     pub quit_item: Mutex<Option<MenuItem<Wry>>>,
@@ -20,6 +22,7 @@ pub struct TrayState {
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrayBatteryStatus {
+    pub device_key: String,
     pub label: String,
     pub battery_text: String,
 }

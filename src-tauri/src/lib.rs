@@ -127,6 +127,7 @@ fn build_tray_state() -> TrayState {
         labels: std::sync::Mutex::new(labels),
         close_to_tray: std::sync::Mutex::new(false),
         close_to_tray_asked: std::sync::Mutex::new(false),
+        low_battery_notified_keys: std::sync::Mutex::new(std::collections::HashSet::new()),
         open_window_item: std::sync::Mutex::new(None),
         battery_item: std::sync::Mutex::new(None),
         quit_item: std::sync::Mutex::new(None),

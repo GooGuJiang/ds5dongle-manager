@@ -34,6 +34,10 @@ export function ConfigPanel({ bridge, onProgressComplete }: ConfigPanelProps) {
   const prevOperationRef = useRef(bridge.operation);
   const switchRunIdRef = useRef(0);
   const finishingRef = useRef(false);
+  const waitingForReconnectRef = useRef(false);
+  const switchStartReadyTokenRef = useRef(bridge.switchReadyToken);
+  const fallbackFinishTimeoutRef = useRef<number | null>(null);
+  const finishProgressRef = useRef<((runId: number) => void) | null>(null);
   const onProgressCompleteRef = useRef(onProgressComplete);
 
   onProgressCompleteRef.current = onProgressComplete;
@@ -51,6 +55,10 @@ export function ConfigPanel({ bridge, onProgressComplete }: ConfigPanelProps) {
   const clearManagedTimeouts = useCallback(() => {
     timeoutIdsRef.current.forEach((id) => window.clearTimeout(id));
     timeoutIdsRef.current = [];
+    if (fallbackFinishTimeoutRef.current !== null) {
+      window.clearTimeout(fallbackFinishTimeoutRef.current);
+      fallbackFinishTimeoutRef.current = null;
+    }
   }, []);
 
   const delay = useCallback((ms: number) => {
@@ -112,6 +120,8 @@ export function ConfigPanel({ bridge, onProgressComplete }: ConfigPanelProps) {
       const runId = switchRunIdRef.current + 1;
       switchRunIdRef.current = runId;
       finishingRef.current = false;
+      waitingForReconnectRef.current = false;
+      switchStartReadyTokenRef.current = bridge.switchReadyToken;
 
       clearManagedTimeouts();
       stopProgressAnimation();
@@ -125,11 +135,18 @@ export function ConfigPanel({ bridge, onProgressComplete }: ConfigPanelProps) {
 
       // 操作执行期间最多走到 90%，等待真正完成后再补到 100%
       animateProgressTo(90, PROGRESS_ANIMATION_DURATION_MS, runId);
+      fallbackFinishTimeoutRef.current = window.setTimeout(() => {
+        if (switchRunIdRef.current === runId && !finishingRef.current) {
+          waitingForReconnectRef.current = false;
+          finishProgressRef.current?.(runId);
+        }
+      }, PROGRESS_ANIMATION_DURATION_MS + 6_000);
     },
     [
       animateProgressTo,
       clearManagedTimeouts,
       setProgressValue,
+      bridge.switchReadyToken,
       stopProgressAnimation,
     ],
   );
@@ -141,6 +158,10 @@ export function ConfigPanel({ bridge, onProgressComplete }: ConfigPanelProps) {
       }
 
       finishingRef.current = true;
+      if (fallbackFinishTimeoutRef.current !== null) {
+        window.clearTimeout(fallbackFinishTimeoutRef.current);
+        fallbackFinishTimeoutRef.current = null;
+      }
 
       const remainingProgress = 100 - progressValueRef.current;
       const finishDurationMs = Math.max(300, remainingProgress * 10);
@@ -178,18 +199,34 @@ export function ConfigPanel({ bridge, onProgressComplete }: ConfigPanelProps) {
     [animateProgressTo, delay, setProgressValue],
   );
 
+  finishProgressRef.current = (runId: number) => {
+    void finishProgressAndReturnHome(runId);
+  };
+
   useEffect(() => {
     const prevOperation = prevOperationRef.current;
     prevOperationRef.current = bridge.operation;
 
-    if (
-      showProgressDialog &&
-      bridge.operation === null &&
-      prevOperation !== null
-    ) {
-      void finishProgressAndReturnHome(switchRunIdRef.current);
+    if (!showProgressDialog || bridge.operation !== null || prevOperation === null) {
+      return;
     }
-  }, [bridge.operation, finishProgressAndReturnHome, showProgressDialog]);
+
+    if (bridge.shouldReturnHomeRef.current) {
+      waitingForReconnectRef.current = true;
+      return;
+    }
+
+    void finishProgressAndReturnHome(switchRunIdRef.current);
+  }, [bridge.client, bridge.operation, bridge.shouldReturnHomeRef, finishProgressAndReturnHome, showProgressDialog]);
+
+  useEffect(() => {
+    if (!showProgressDialog || bridge.switchReadyToken === switchStartReadyTokenRef.current) {
+      return;
+    }
+
+    waitingForReconnectRef.current = false;
+    void finishProgressAndReturnHome(switchRunIdRef.current);
+  }, [bridge.switchReadyToken, finishProgressAndReturnHome, showProgressDialog]);
 
   useEffect(() => {
     return () => {
@@ -203,23 +240,29 @@ export function ConfigPanel({ bridge, onProgressComplete }: ConfigPanelProps) {
   const handlePollingRateChange = (value: PollingRateMode) => {
     const isChanged = bridge.draft.pollingRateMode !== value;
 
-    if (isChanged && bridge.isConnected) {
+    if (!isChanged) {
+      return;
+    }
+
+    if (bridge.isConnected || bridge.shouldReturnHomeRef.current) {
       startProgressAnimation(
         t("config.switchingPollingRate"),
         t("config.switchingPollingRateDescription"),
       );
     }
 
-    window.requestAnimationFrame(() => {
-      bridge.setDraftField("pollingRateMode", value);
-    });
+    bridge.setDraftField("pollingRateMode", value);
   };
 
   // 处理模式切换
   const handleControllerModeChange = (value: ControllerMode) => {
     const isChanged = bridge.draft.controllerMode !== value;
 
-    if (isChanged && bridge.isConnected) {
+    if (!isChanged) {
+      return;
+    }
+
+    if (bridge.isConnected || bridge.shouldReturnHomeRef.current) {
       startProgressAnimation(
         t("config.switchingControllerMode"),
         t("config.switchingControllerModeDescription"),

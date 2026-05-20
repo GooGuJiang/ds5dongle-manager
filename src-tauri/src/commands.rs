@@ -9,8 +9,10 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_notification::NotificationExt;
 
 const SOFTWARE_SETTINGS_FILE_NAME: &str = "software-settings.json";
+const LOW_BATTERY_THRESHOLD_PERCENT: u8 = 15;
 
 #[derive(Default, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -132,6 +134,8 @@ pub fn ds5_update_tray_batteries(
         crate::state::TrayLabels::fallback()
     };
 
+    process_low_battery_notifications(&app, &state, &batteries)?;
+
     let battery_lines = normalize_tray_battery_values(batteries);
     let menu_text = format_tray_menu_battery_text(&labels, &battery_lines);
     let tooltip_text = format!("DS5 Dongle Manager\n{}", battery_lines.join("\n"));
@@ -176,6 +180,56 @@ fn normalize_tray_battery_values(batteries: Vec<crate::state::TrayBatteryStatus>
         .collect();
 
     values
+}
+
+fn process_low_battery_notifications(
+    app: &AppHandle,
+    state: &State<'_, TrayState>,
+    batteries: &[crate::state::TrayBatteryStatus],
+) -> Result<(), String> {
+    let settings = load_software_settings(app)?;
+    if !settings.low_battery_notification_enabled {
+        if let Ok(mut notified_keys) = state.low_battery_notified_keys.lock() {
+            notified_keys.clear();
+        }
+        return Ok(());
+    }
+
+    let mut notified_keys = state.low_battery_notified_keys.lock().map_err(|error| error.to_string())?;
+    for status in batteries {
+        let device_key = status.device_key.trim();
+        if device_key.is_empty() {
+            continue;
+        }
+
+        let percent = parse_battery_percent(&status.battery_text);
+        if percent.map_or(true, |value| value > LOW_BATTERY_THRESHOLD_PERCENT) {
+            notified_keys.remove(device_key);
+            continue;
+        }
+
+        if !notified_keys.insert(device_key.to_string()) {
+            continue;
+        }
+
+        let label = status.label.trim();
+        let device_name = if label.is_empty() { "Controller" } else { label };
+        let battery_text = status.battery_text.trim();
+        let body = format!("{device_name} battery is {battery_text}. Please charge it soon.");
+        let _ = app
+            .notification()
+            .builder()
+            .title("Controller battery low")
+            .body(body)
+            .show();
+    }
+
+    Ok(())
+}
+
+fn parse_battery_percent(battery_text: &str) -> Option<u8> {
+    let percent_text = battery_text.trim().split('%').next()?.trim();
+    percent_text.parse::<u8>().ok()
 }
 
 fn format_tray_menu_battery_text(labels: &crate::state::TrayLabels, battery_lines: &[String]) -> String {
@@ -268,9 +322,14 @@ pub fn ds5_get_software_settings(app: AppHandle, state: State<'_, TrayState>) ->
 }
 
 #[tauri::command]
-pub fn ds5_set_low_battery_notification_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+pub fn ds5_set_low_battery_notification_enabled(app: AppHandle, state: State<'_, TrayState>, enabled: bool) -> Result<(), String> {
     let mut settings = load_software_settings(&app)?;
     settings.low_battery_notification_enabled = enabled;
+    if !enabled {
+        if let Ok(mut notified_keys) = state.low_battery_notified_keys.lock() {
+            notified_keys.clear();
+        }
+    }
     save_software_settings(&app, settings.clone())?;
     emit_software_settings_changed(&app, settings);
     Ok(())
