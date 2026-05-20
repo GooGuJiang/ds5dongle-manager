@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import {
   ConfigBody,
   ConfigDecodeError,
@@ -30,6 +31,7 @@ const BATTERY_REFRESH_INTERVAL_MS = 15_000;
 const DEVICE_DISCOVERY_INTERVAL_MS = 2_000;
 const PICO_INFO_REFRESH_INTERVAL_MS = 5_000;
 const BATTERY_LISTEN_TIMEOUT_MS = 1_200;
+const LOW_BATTERY_THRESHOLD_PERCENT = 15;
 
 export interface UseDs5BridgeResult {
   supported: boolean;
@@ -57,7 +59,10 @@ export interface UseDs5BridgeResult {
   isDirty: boolean;
   isDefaultConfig: boolean;
   needsUsbReconnect: boolean;
+  lowBatteryNotificationEnabled: boolean;
   setDraftField: <Key extends keyof ConfigBody>(field: Key, value: ConfigBody[Key]) => void;
+  setLowBatteryNotificationEnabled: (enabled: boolean) => Promise<void>;
+  testLowBatteryNotification: () => Promise<void>;
   refreshAuthorizedDevices: () => Promise<void>;
   connect: () => Promise<void>;
   connectAuthorized: (device: HIDDevice) => Promise<void>;
@@ -80,6 +85,7 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [needsUsbReconnect, setNeedsUsbReconnect] = useState(false);
+  const [lowBatteryNotificationEnabled, setLowBatteryNotificationEnabledState] = useState(true);
   const [shouldReturnHome, setShouldReturnHome] = useState(false);
   const shouldReturnHomeRef = useRef(false);
   const [batteryText, setBatteryText] = useState("--");
@@ -104,6 +110,8 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   const autoConnectDeviceKeyRef = useRef<string | null>(null);
   const authorizedDeviceInfoScanIdRef = useRef(0);
   const pendingChangedFieldsRef = useRef<Set<keyof ConfigBody>>(new Set());
+  const lowBatteryNotificationEnabledRef = useRef(true);
+  const lowBatteryNotifiedKeyRef = useRef<Set<string>>(new Set());
 
   const issues = useMemo(() => validateConfig(draft), [draft]);
   const isConnected = Boolean(client?.device.opened);
@@ -223,6 +231,59 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     setDeviceSerialNumber("--");
   }, []);
 
+  const setLowBatteryNotificationEnabled = useCallback(async (enabled: boolean) => {
+    lowBatteryNotificationEnabledRef.current = enabled;
+    setLowBatteryNotificationEnabledState(enabled);
+
+    if (!enabled) {
+      lowBatteryNotifiedKeyRef.current.clear();
+    }
+
+    await invoke("ds5_set_low_battery_notification_enabled", { enabled });
+  }, []);
+
+  const notifyLowBatteryIfNeeded = useCallback((device: HIDDevice, nextBatteryText: string) => {
+    if (!lowBatteryNotificationEnabledRef.current) {
+      return;
+    }
+
+    const percent = parseBatteryPercent(nextBatteryText);
+    const deviceKey = getDeviceKey(device);
+
+    if (percent === null || percent > LOW_BATTERY_THRESHOLD_PERCENT) {
+      lowBatteryNotifiedKeyRef.current.delete(deviceKey);
+      return;
+    }
+
+    if (lowBatteryNotifiedKeyRef.current.has(deviceKey)) {
+      return;
+    }
+
+    lowBatteryNotifiedKeyRef.current.add(deviceKey);
+    void enqueueLowBatteryNotification(
+      t("notifications.lowBatteryTitle"),
+      t("notifications.lowBatteryBody", { device: getDeviceLabel(device), battery: nextBatteryText }),
+    );
+  }, [t]);
+
+  const testLowBatteryNotification = useCallback(async () => {
+    await enqueueLowBatteryNotification(
+      t("notifications.lowBatteryTitle"),
+      t("notifications.lowBatteryBody", { device: t("notifications.testDevice"), battery: "20%" }),
+    );
+  }, [t]);
+
+  const handleConnectedDeviceDisconnected = useCallback((expectedDisconnect = false) => {
+    if (!expectedDisconnect) {
+      shouldReturnHomeRef.current = false;
+      setShouldReturnHome(false);
+      setError(t("errors.disconnected"));
+    }
+
+    expectedUsbDisconnectRef.current = false;
+    clearConnectedDevice();
+  }, [clearConnectedDevice, t]);
+
   const attachClient = useCallback(
     async (nextClient: Ds5BridgeHidClient) => {
       setOperation("connecting");
@@ -251,10 +312,11 @@ export function useDs5Bridge(): UseDs5BridgeResult {
       const nextBatteryText = await nextClient.readBatteryText(BATTERY_LISTEN_TIMEOUT_MS).catch(() => null);
       if (nextBatteryText) {
         setBatteryText(nextBatteryText);
+        notifyLowBatteryIfNeeded(nextClient.device, nextBatteryText);
       }
       await refreshPicoInfo(nextClient, setFirmwareVersion, setSignalStrength);
     },
-    [readConfigWithClient],
+    [notifyLowBatteryIfNeeded, readConfigWithClient],
   );
 
   const connectDeviceSilently = useCallback(async (device: HIDDevice) => {
@@ -301,10 +363,15 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     try {
       await readConfigWithClient(client);
     } catch (cause) {
+      if (!client.device.opened) {
+        handleConnectedDeviceDisconnected(expectedUsbDisconnectRef.current);
+        return;
+      }
+
       setError(errorMessage(cause, t));
       setOperation(null);
     }
-  }, [client, readConfigWithClient, t]);
+  }, [client, handleConnectedDeviceDisconnected, readConfigWithClient, t]);
 
   const applyLatestDraft = useCallback(async (): Promise<boolean> => {
     if (applyingRef.current) {
@@ -490,6 +557,15 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   }, [refreshAuthorizedDevices]);
 
   useEffect(() => {
+    void invoke<boolean>("ds5_get_low_battery_notification_enabled")
+      .then((enabled) => {
+        lowBatteryNotificationEnabledRef.current = enabled;
+        setLowBatteryNotificationEnabledState(enabled);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     if (!supported) {
       return;
     }
@@ -505,12 +581,7 @@ export function useDs5Bridge(): UseDs5BridgeResult {
 
         const connectedClient = clientRef.current;
         if (connectedClient && !deviceListIncludes(nextDevices, connectedClient.device)) {
-          if (!expectedUsbDisconnectRef.current) {
-            shouldReturnHomeRef.current = false;
-            setShouldReturnHome(false);
-          }
-          expectedUsbDisconnectRef.current = false;
-          clearConnectedDevice();
+          handleConnectedDeviceDisconnected(expectedUsbDisconnectRef.current);
         }
       }
     }).then((nextUnlisten) => {
@@ -530,7 +601,7 @@ export function useDs5Bridge(): UseDs5BridgeResult {
       window.clearInterval(intervalId);
       unlisten?.();
     };
-  }, [clearConnectedDevice, refreshAuthorizedDevices, supported]);
+  }, [handleConnectedDeviceDisconnected, refreshAuthorizedDevices, supported]);
 
   useEffect(() => {
     const connectedClient = clientRef.current;
@@ -538,13 +609,8 @@ export function useDs5Bridge(): UseDs5BridgeResult {
       return;
     }
 
-    if (!expectedUsbDisconnectRef.current) {
-      shouldReturnHomeRef.current = false;
-      setShouldReturnHome(false);
-    }
-    expectedUsbDisconnectRef.current = false;
-    clearConnectedDevice();
-  }, [authorizedDevices, clearConnectedDevice]);
+    handleConnectedDeviceDisconnected(expectedUsbDisconnectRef.current);
+  }, [authorizedDevices, handleConnectedDeviceDisconnected]);
 
   useEffect(() => {
     if (authorizedDevices.length === 0) {
@@ -592,6 +658,11 @@ export function useDs5Bridge(): UseDs5BridgeResult {
         void connectedClient.readBatteryText(BATTERY_LISTEN_TIMEOUT_MS).then((nextBatteryText) => {
           if (nextBatteryText && clientRef.current === connectedClient) {
             setBatteryText(nextBatteryText);
+            notifyLowBatteryIfNeeded(connectedClient.device, nextBatteryText);
+          }
+        }).catch(() => {
+          if (clientRef.current === connectedClient && !connectedClient.device.opened) {
+            handleConnectedDeviceDisconnected(expectedUsbDisconnectRef.current);
           }
         });
       }
@@ -599,7 +670,7 @@ export function useDs5Bridge(): UseDs5BridgeResult {
 
     const intervalId = window.setInterval(refreshBatteryInfo, BATTERY_REFRESH_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
-  }, [refreshAuthorizedDevices, supported]);
+  }, [handleConnectedDeviceDisconnected, notifyLowBatteryIfNeeded, refreshAuthorizedDevices, supported]);
 
   useEffect(() => {
     const batteries = authorizedDevices.map((device, index) => {
@@ -643,14 +714,18 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     const refreshConnectedPicoInfo = () => {
       const currentClient = clientRef.current;
       if (currentClient?.device.opened) {
-        void refreshPicoInfo(currentClient, setFirmwareVersion, setSignalStrength);
+        void refreshPicoInfo(currentClient, setFirmwareVersion, setSignalStrength).catch(() => {
+          if (clientRef.current === currentClient && !currentClient.device.opened) {
+            handleConnectedDeviceDisconnected(expectedUsbDisconnectRef.current);
+          }
+        });
       }
     };
 
     refreshConnectedPicoInfo();
     const intervalId = window.setInterval(refreshConnectedPicoInfo, PICO_INFO_REFRESH_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
-  }, [supported]);
+  }, [handleConnectedDeviceDisconnected, supported]);
 
   useEffect(() => {
     return () => {
@@ -689,7 +764,10 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     isDirty,
     isDefaultConfig,
     needsUsbReconnect,
+    lowBatteryNotificationEnabled,
     setDraftField,
+    setLowBatteryNotificationEnabled,
+    testLowBatteryNotification,
     refreshAuthorizedDevices,
     connect,
     connectAuthorized,
@@ -703,6 +781,26 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     },
     clearError: () => setError(null),
   };
+}
+
+function parseBatteryPercent(batteryText: string): number | null {
+  const match = batteryText.match(/(\d{1,3})\s*%/);
+  if (!match) {
+    return null;
+  }
+
+  return Math.max(0, Math.min(100, Number(match[1])));
+}
+
+async function enqueueLowBatteryNotification(title: string, body: string): Promise<void> {
+  try {
+    const granted = (await isPermissionGranted()) || (await requestPermission()) === "granted";
+    if (granted) {
+      sendNotification({ title, body });
+    }
+  } catch {
+    // Notifications are best-effort only.
+  }
 }
 
 async function refreshPicoInfo(

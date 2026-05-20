@@ -5,6 +5,7 @@ mod state;
 use commands::{
     ds5_list_devices, ds5_read_feature_report, ds5_read_input_report, ds5_send_feature_report,
     ds5_get_close_to_tray, ds5_set_close_to_tray, ds5_start_device_monitor,
+    ds5_get_low_battery_notification_enabled, ds5_set_low_battery_notification_enabled,
     ds5_update_tray_batteries, ds5_update_tray_labels,
 };
 use state::{DeviceMonitorState, TrayLabels, TrayState};
@@ -12,7 +13,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::{
     image::Image,
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager, WindowEvent,
 };
@@ -28,6 +29,7 @@ pub fn run() {
         })
         .manage(build_tray_state())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let labels = app
                 .state::<TrayState>()
@@ -39,7 +41,9 @@ pub fn run() {
             let open_window = MenuItem::with_id(app, "open_window", &labels.open_window, true, None::<&str>)?;
             let battery = MenuItem::with_id(app, "battery", &battery_text, false, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", &labels.quit, true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open_window, &battery, &quit])?;
+            let separator_top = PredefinedMenuItem::separator(app)?;
+            let separator_bottom = PredefinedMenuItem::separator(app)?;
+            let menu = Menu::with_items(app, &[&open_window, &separator_top, &battery, &separator_bottom, &quit])?;
             let tray_icon = Image::from_bytes(include_bytes!("../icons/pwa-icon.png"))?;
 
             let tray_state = app.state::<TrayState>();
@@ -105,7 +109,9 @@ pub fn run() {
             ds5_update_tray_batteries,
             ds5_update_tray_labels,
             ds5_set_close_to_tray,
-            ds5_get_close_to_tray
+            ds5_get_close_to_tray,
+            ds5_set_low_battery_notification_enabled,
+            ds5_get_low_battery_notification_enabled
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

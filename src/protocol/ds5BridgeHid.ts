@@ -75,25 +75,40 @@ class TauriHidDevice extends EventTarget {
       : data instanceof ArrayBuffer
         ? new Uint8Array(data)
         : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-    await invoke("ds5_send_feature_report", { path: this.info.path, reportId, data: Array.from(bytes) });
+    try {
+      await invoke("ds5_send_feature_report", { path: this.info.path, reportId, data: Array.from(bytes) });
+    } catch (cause) {
+      this.opened = false;
+      throw cause;
+    }
   }
 
   async receiveFeatureReport(reportId: number, length = FEATURE_REPORT_PAYLOAD_SIZE + 1): Promise<DataView> {
-    const bytes = await invoke<number[]>("ds5_read_feature_report", {
-      path: this.info.path,
-      reportId,
-      length,
-    });
-    return bytesToDataView(bytes);
+    try {
+      const bytes = await invoke<number[]>("ds5_read_feature_report", {
+        path: this.info.path,
+        reportId,
+        length,
+      });
+      return bytesToDataView(bytes);
+    } catch (cause) {
+      this.opened = false;
+      throw cause;
+    }
   }
 
   async readInputReport(timeoutMs: number, length = 64): Promise<DataView | null> {
-    const bytes = await invoke<number[] | null>("ds5_read_input_report", {
-      path: this.info.path,
-      timeoutMs,
-      length,
-    });
-    return bytes ? bytesToDataView(bytes) : null;
+    try {
+      const bytes = await invoke<number[] | null>("ds5_read_input_report", {
+        path: this.info.path,
+        timeoutMs,
+        length,
+      });
+      return bytes ? bytesToDataView(bytes) : null;
+    } catch (cause) {
+      this.opened = false;
+      throw cause;
+    }
   }
 }
 
@@ -121,6 +136,10 @@ export class Ds5BridgeHidClient {
   static async authorizedDevices(): Promise<HIDDevice[]> {
     const devices = await invoke<TauriHidDeviceInfo[]>("ds5_list_devices");
     return tauriDeviceInfosToHidDevices(devices);
+  }
+
+  static devicePath(device: HIDDevice): string | null {
+    return (device as unknown as TauriHidDevice).info?.path ?? null;
   }
 
   async open(): Promise<void> {

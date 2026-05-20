@@ -16,6 +16,9 @@ export const en = {
     description: "Configure what happens after closing the window.",
     closeToTray: "Minimize to tray when closing the window",
     closeToTrayDescription: "When enabled, the close button hides the window and keeps the app running in the tray. When disabled, it exits the app directly.",
+    lowBatteryNotification: "Controller low-battery notification",
+    lowBatteryNotificationDescription: "Send a system notification when controller battery is at or below 15%.",
+    testNotification: "Test notification",
   },
   language: {
     label: "Language",
@@ -193,5 +196,10 @@ export const en = {
     noDeviceSelected: "No Pico has been selected",
     unexpectedWebHid: "An unknown error occurred while connecting to the device",
     disconnected: "Device disconnected",
+  },
+  notifications: {
+    lowBatteryTitle: "Controller battery low",
+    lowBatteryBody: "{{device}} battery is {{battery}}. Please charge it soon.",
+    testDevice: "Test controller",
   },
 } as const;

@@ -3,16 +3,20 @@ import { Switch } from "@/components/ui/switch";
 
 interface ToggleControlProps {
   label: string;
+  description?: string;
   value: boolean;
   onChange: (value: boolean) => void;
 }
 
-export function ToggleControl({ label, value, onChange }: ToggleControlProps) {
+export function ToggleControl({ label, description, value, onChange }: ToggleControlProps) {
   const { t } = useTranslation();
 
   return (
     <div className="control-row toggle-row">
-      <strong>{label}</strong>
+      <span>
+        <strong>{label}</strong>
+        {description ? <small>{description}</small> : null}
+      </span>
       <Switch
         checked={value}
         onCheckedChange={onChange}

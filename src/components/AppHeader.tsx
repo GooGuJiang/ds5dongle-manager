@@ -42,6 +42,9 @@ interface AppHeaderProps {
   isBusy?: boolean;
   onReadConfig?: () => void;
   onResetToDefaults?: () => void;
+  lowBatteryNotificationEnabled?: boolean;
+  onLowBatteryNotificationEnabledChange?: (enabled: boolean) => Promise<void>;
+  onTestLowBatteryNotification?: () => Promise<void>;
 }
 
 export function AppHeader({
@@ -61,6 +64,9 @@ export function AppHeader({
   isBusy = false,
   onReadConfig,
   onResetToDefaults,
+  lowBatteryNotificationEnabled = true,
+  onLowBatteryNotificationEnabledChange,
+  onTestLowBatteryNotification,
 }: AppHeaderProps) {
   const { t } = useTranslation();
   const appWindow = getCurrentWindow();
@@ -96,6 +102,10 @@ export function AppHeader({
   const updateCloseToTray = (checked: boolean) => {
     setCloseToTray(checked);
     void invoke("ds5_set_close_to_tray", { closeToTray: checked }).catch(() => setCloseToTray(!checked));
+  };
+
+  const updateLowBatteryNotification = (checked: boolean) => {
+    void onLowBatteryNotificationEnabledChange?.(checked);
   };
 
   return (
@@ -288,6 +298,28 @@ export function AppHeader({
               <p>{t("softwareSettings.closeToTrayDescription")}</p>
             </div>
             <Switch checked={closeToTray} onCheckedChange={updateCloseToTray} aria-label={t("softwareSettings.closeToTray")} />
+          </div>
+          <div className="software-settings-option">
+            <div>
+              <strong>{t("softwareSettings.lowBatteryNotification")}</strong>
+              <p>{t("softwareSettings.lowBatteryNotificationDescription")}</p>
+            </div>
+            <div className="software-settings-option-actions">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => void onTestLowBatteryNotification?.()}
+                disabled={!lowBatteryNotificationEnabled}
+              >
+                {t("softwareSettings.testNotification")}
+              </Button>
+              <Switch
+                checked={lowBatteryNotificationEnabled}
+                onCheckedChange={updateLowBatteryNotification}
+                aria-label={t("softwareSettings.lowBatteryNotification")}
+              />
+            </div>
           </div>
         </DialogContent>
       </Dialog>

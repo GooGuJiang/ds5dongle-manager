@@ -16,6 +16,9 @@ export const zh = {
     description: "设置窗口关闭后的运行方式。",
     closeToTray: "关闭窗口时最小化到托盘",
     closeToTrayDescription: "开启后点击关闭按钮只隐藏窗口，程序继续在托盘运行；关闭后点击关闭按钮会直接退出软件。",
+    lowBatteryNotification: "手柄低电量通知",
+    lowBatteryNotificationDescription: "手柄电量低于或等于 15% 时发送系统通知。",
+    testNotification: "测试通知",
   },
   language: {
     label: "语言",
@@ -193,5 +196,10 @@ export const zh = {
     noDeviceSelected: "还没有选择 Pico",
     unexpectedWebHid: "连接设备时出现未知错误",
     disconnected: "设备已断开连接",
+  },
+  notifications: {
+    lowBatteryTitle: "手柄电量低",
+    lowBatteryBody: "{{device}} 当前电量为 {{battery}}，请及时充电。",
+    testDevice: "测试手柄",
   },
 } as const;

@@ -194,6 +194,19 @@
   line-height: 1.35;
 }
 
+.software-settings-option-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.software-settings-option-actions button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .header-actions {
   flex: 0 1 auto;
   max-width: calc(100% - 230px);

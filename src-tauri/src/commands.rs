@@ -16,6 +16,7 @@ const SOFTWARE_SETTINGS_FILE_NAME: &str = "software-settings.json";
 #[serde(rename_all = "camelCase")]
 struct SoftwareSettings {
     close_to_tray: bool,
+    low_battery_notification_enabled: bool,
 }
 
 #[tauri::command]
@@ -108,7 +109,7 @@ pub fn ds5_update_tray_batteries(
     };
 
     let battery_lines = normalize_tray_battery_values(batteries);
-    let menu_text = format!("{}：{}", labels.battery_prefix, battery_lines.join(" / "));
+    let menu_text = format_tray_menu_battery_text(&labels, &battery_lines);
     let tooltip_text = format!("DS5 Dongle Manager\n{}", battery_lines.join("\n"));
 
     if let Ok(mut current_values) = state.battery_values.lock() {
@@ -157,6 +158,14 @@ fn normalize_tray_battery_values(batteries: Vec<crate::state::TrayBatteryStatus>
     values
 }
 
+fn format_tray_menu_battery_text(labels: &crate::state::TrayLabels, battery_lines: &[String]) -> String {
+    if battery_lines.len() <= 1 {
+        return format!("{}：{}", labels.battery_prefix, battery_lines.first().map(String::as_str).unwrap_or("--"));
+    }
+
+    format!("{}：{}", labels.battery_prefix, battery_lines.join("  |  "))
+}
+
 #[allow(dead_code)]
 fn _legacy_single_battery_text(battery_text: String) -> String {
     let normalized_text = battery_text.trim();
@@ -191,21 +200,32 @@ pub fn ds5_update_tray_labels(app: AppHandle, state: State<'_, TrayState>, label
     } else {
         vec!["--".to_string()]
     };
-    let batteries = battery_values
-        .into_iter()
-        .map(|battery_text| crate::state::TrayBatteryStatus {
-            label: String::new(),
-            battery_text,
-        })
-        .collect();
-    ds5_update_tray_batteries(app, state, batteries)
+    let menu_text = format_tray_menu_battery_text(&labels, &battery_values);
+
+    if let Ok(battery_item) = state.battery_item.lock() {
+        if let Some(item) = battery_item.as_ref() {
+            item.set_text(&menu_text).map_err(|error| error.to_string())?;
+        }
+    }
+
+    if let Some(tray) = app.tray_by_id("main") {
+        tray.set_tooltip(Some(format!("DS5 Dongle Manager\n{}", battery_values.join("\n"))))
+            .map_err(|error| error.to_string())?;
+
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        tray.set_title(Some(menu_text)).map_err(|error| error.to_string())?;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
 pub fn ds5_set_close_to_tray(app: AppHandle, state: State<'_, TrayState>, close_to_tray: bool) -> Result<(), String> {
     let mut current_value = state.close_to_tray.lock().map_err(|error| error.to_string())?;
     *current_value = close_to_tray;
-    save_software_settings(&app, SoftwareSettings { close_to_tray })?;
+    let mut settings = load_software_settings(&app)?;
+    settings.close_to_tray = close_to_tray;
+    save_software_settings(&app, settings)?;
     Ok(())
 }
 
@@ -215,6 +235,19 @@ pub fn ds5_get_close_to_tray(app: AppHandle, state: State<'_, TrayState>) -> Res
     let mut current_value = state.close_to_tray.lock().map_err(|error| error.to_string())?;
     *current_value = close_to_tray;
     Ok(close_to_tray)
+}
+
+#[tauri::command]
+pub fn ds5_set_low_battery_notification_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = load_software_settings(&app)?;
+    settings.low_battery_notification_enabled = enabled;
+    save_software_settings(&app, settings)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn ds5_get_low_battery_notification_enabled(app: AppHandle) -> Result<bool, String> {
+    Ok(load_software_settings(&app)?.low_battery_notification_enabled)
 }
 
 fn software_settings_path(app: &AppHandle) -> Result<PathBuf, String> {

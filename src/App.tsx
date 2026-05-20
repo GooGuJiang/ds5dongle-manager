@@ -174,6 +174,9 @@ export default function App() {
           isBusy={isBusy}
           onReadConfig={bridge.readConfig}
           onResetToDefaults={bridge.resetToDefaults}
+          lowBatteryNotificationEnabled={bridge.lowBatteryNotificationEnabled}
+          onLowBatteryNotificationEnabledChange={bridge.setLowBatteryNotificationEnabled}
+          onTestLowBatteryNotification={bridge.testLowBatteryNotification}
         />
         {view === "home" ? (
           <>
