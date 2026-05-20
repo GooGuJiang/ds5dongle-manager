@@ -234,6 +234,9 @@ export function useDs5Bridge(): UseDs5BridgeResult {
         await nextClient.open();
         clientRef.current = nextClient;
         setClient(nextClient);
+        shouldReturnHomeRef.current = false;
+        setShouldReturnHome(false);
+        requireManualSelectionRef.current = false;
         setError(null);
       } finally {
         setOperation(null);
@@ -340,8 +343,9 @@ export function useDs5Bridge(): UseDs5BridgeResult {
         if (needsReconnect) {
           expectedUsbDisconnectRef.current = true;
           requireManualSelectionRef.current = true;
-          // 先设置 shouldReturnHome（ref 同步 + state 异步），防止 disconnect 事件中
-          // clearConnectedDevice 将 client 设为 null 后 App.tsx 的 useEffect 提前切换到主页
+          // 先设置 shouldReturnHome（ref 同步 + state 异步）作为 USB 重枚举期间的设置页保活标记，
+          // 防止 disconnect 事件中 clearConnectedDevice 将 client 设为 null 后 App.tsx 的 useEffect 提前切换到主页。
+          // 设备重新连接成功后会在 attachClient 中清理该标记，不再强制回到主页，避免设置页闪动。
           shouldReturnHomeRef.current = true;
           setShouldReturnHome(true);
           try {

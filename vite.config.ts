@@ -3,7 +3,6 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vitejs.dev/config/
@@ -35,5 +34,10 @@ export default defineConfig(async () => ({
       // 3. tell vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
     },
+  },
+  build: {
+    // Tauri 桌面端本地加载资源，当前主 chunk 约 628 kB，仍在可接受范围内；
+    // 保留现有 lazy import 分包，同时提高提示阈值避免构建日志误报为问题。
+    chunkSizeWarningLimit: 700,
   },
 }));

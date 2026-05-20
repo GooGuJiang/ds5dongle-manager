@@ -33,13 +33,12 @@ export default function App() {
   const isSettingsView = view === "settings" || view === "about";
   const handleBackHome = useCallback(() => setView("home"), []);
   const handleOpenSettings = useCallback(() => setView("settings"), []);
-  // 进度条完成后切换回主页（仅在模式切换场景下触发）
+  // 进度条完成后不再切换回主页，避免回报率/手柄模式切换时 USB 重枚举造成设置页闪回主页。
   const handleProgressComplete = useCallback(() => {
-    if (bridge.shouldReturnHomeRef.current) {
-      setView("home");
+    if (bridge.shouldReturnHomeRef.current && bridge.client) {
       bridge.clearReturnHome();
     }
-  }, [bridge.clearReturnHome, bridge.shouldReturnHomeRef]);
+  }, [bridge.client, bridge.clearReturnHome, bridge.shouldReturnHomeRef]);
 
   useEffect(() => {
     if (!bridge.client && (view === "settings" || view === "about") && !bridge.shouldReturnHomeRef.current) {

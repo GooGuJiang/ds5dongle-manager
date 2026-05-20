@@ -16,7 +16,7 @@ export const PROGRESS_ANIMATION_DURATION_MS = 5000;
 
 interface ConfigPanelProps {
   bridge: UseDs5BridgeResult;
-  /** 进度条对话框完全关闭后回调（用于通知 App 切换主页） */
+  /** 进度条对话框完全关闭后回调（用于通知 App 清理切换态） */
   onProgressComplete?: () => void;
 }
 
@@ -169,7 +169,7 @@ export function ConfigPanel({ bridge, onProgressComplete }: ConfigPanelProps) {
       setProgressValue(0);
       finishingRef.current = false;
 
-      // 只有这里允许通知 App 返回主页
+      // 只有这里允许通知 App 清理切换态，页面保持在设置页以避免闪动。
       onProgressCompleteRef.current?.();
     },
     [animateProgressTo, delay, setProgressValue],
