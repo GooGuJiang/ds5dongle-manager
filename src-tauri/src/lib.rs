@@ -62,20 +62,24 @@ pub fn run() {
                 eprintln!("failed to load software settings: {error}");
             }
 
-            WebviewWindowBuilder::new(app, TRAY_POPUP_LABEL, WebviewUrl::App("/?tray=1".into()))
+            let tray_popup_builder = WebviewWindowBuilder::new(app, TRAY_POPUP_LABEL, WebviewUrl::App("/?tray=1".into()))
                 .title("DS5 Dongle Manager Tray")
                 .inner_size(TRAY_POPUP_WIDTH, TRAY_POPUP_MIN_HEIGHT)
                 .min_inner_size(TRAY_POPUP_WIDTH, TRAY_POPUP_MIN_HEIGHT)
                 .max_inner_size(TRAY_POPUP_WIDTH, TRAY_POPUP_BATTERY_HEIGHT)
-                .decorations(false)
-                .transparent(true)
+                .decorations(false);
+
+            #[cfg(not(target_os = "macos"))]
+            let tray_popup_builder = tray_popup_builder.transparent(true);
+
+            tray_popup_builder
                 .resizable(false)
                 .skip_taskbar(true)
                 .always_on_top(true)
                 .visible(false)
                 .build()?;
 
-            WebviewWindowBuilder::new(
+            let controller_notification_builder = WebviewWindowBuilder::new(
                 app,
                 CONTROLLER_NOTIFICATION_LABEL,
                 WebviewUrl::App("/?controllerNotification=1".into()),
@@ -84,8 +88,12 @@ pub fn run() {
                 .inner_size(CONTROLLER_NOTIFICATION_COLLAPSED_WIDTH, CONTROLLER_NOTIFICATION_HEIGHT)
                 .min_inner_size(CONTROLLER_NOTIFICATION_COLLAPSED_WIDTH, CONTROLLER_NOTIFICATION_HEIGHT)
                 .max_inner_size(CONTROLLER_NOTIFICATION_WIDTH, CONTROLLER_NOTIFICATION_HEIGHT)
-                .decorations(false)
-                .transparent(true)
+                .decorations(false);
+
+            #[cfg(not(target_os = "macos"))]
+            let controller_notification_builder = controller_notification_builder.transparent(true);
+
+            controller_notification_builder
                 .background_color(Color(0, 0, 0, 0))
                 .shadow(false)
                 .resizable(false)
