@@ -197,7 +197,7 @@ pub async fn ds5_read_input_report(path: String, timeout_ms: i32, length: usize)
 }
 
 #[tauri::command]
-pub fn ds5_update_tray_batteries(
+pub async fn ds5_update_tray_batteries(
     app: AppHandle,
     state: State<'_, TrayState>,
     batteries: Vec<crate::state::TrayBatteryStatus>,
@@ -208,7 +208,8 @@ pub fn ds5_update_tray_batteries(
         crate::state::TrayLabels::fallback()
     };
 
-    process_low_battery_notifications(&app, &state, &batteries)?;
+    let settings = load_software_settings_async(app.clone()).await?;
+    process_low_battery_notifications(&app, &state, &settings, &batteries);
 
     let battery_lines = normalize_tray_battery_values(batteries);
     let menu_text = format_tray_menu_battery_text(&labels, &battery_lines);
@@ -259,17 +260,19 @@ fn normalize_tray_battery_values(batteries: Vec<crate::state::TrayBatteryStatus>
 fn process_low_battery_notifications(
     app: &AppHandle,
     state: &State<'_, TrayState>,
+    settings: &SoftwareSettings,
     batteries: &[crate::state::TrayBatteryStatus],
-) -> Result<(), String> {
-    let settings = load_software_settings(app)?;
+) {
     if !settings.low_battery_notification_enabled {
         if let Ok(mut notified_keys) = state.low_battery_notified_keys.lock() {
             notified_keys.clear();
         }
-        return Ok(());
+        return;
     }
 
-    let mut notified_keys = state.low_battery_notified_keys.lock().map_err(|error| error.to_string())?;
+    let Ok(mut notified_keys) = state.low_battery_notified_keys.lock() else {
+        return;
+    };
     for status in batteries {
         let device_key = status.device_key.trim();
         if device_key.is_empty() {
@@ -296,10 +299,8 @@ fn process_low_battery_notifications(
             .title("Controller battery low")
             .body(body)
             .show();
-        let _ = play_controller_notification_sound(app, ControllerNotificationSound::LowBattery);
+        let _ = play_controller_notification_sound_with_settings(app, ControllerNotificationSound::LowBattery, settings);
     }
-
-    Ok(())
 }
 
 fn parse_battery_percent(battery_text: &str) -> Option<u8> {
@@ -373,49 +374,49 @@ pub fn ds5_update_tray_labels(app: AppHandle, state: State<'_, TrayState>, label
 }
 
 #[tauri::command]
-pub fn ds5_set_close_to_tray(app: AppHandle, state: State<'_, TrayState>, close_to_tray: bool) -> Result<(), String> {
+pub async fn ds5_set_close_to_tray(app: AppHandle, state: State<'_, TrayState>, close_to_tray: bool) -> Result<(), String> {
     update_close_to_tray_state(&state, close_to_tray, true)?;
-    let mut settings = load_software_settings(&app)?;
+    let mut settings = load_software_settings_async(app.clone()).await?;
     settings.close_to_tray = close_to_tray;
     settings.close_to_tray_asked = true;
-    save_software_settings(&app, settings.clone())?;
+    save_software_settings_async(app.clone(), settings.clone()).await?;
     emit_software_settings_changed(&app, settings);
     Ok(())
 }
 
 #[tauri::command]
-pub fn ds5_get_close_to_tray(app: AppHandle, state: State<'_, TrayState>) -> Result<bool, String> {
-    let settings = sync_software_settings_state(&app, &state)?;
+pub async fn ds5_get_close_to_tray(app: AppHandle, state: State<'_, TrayState>) -> Result<bool, String> {
+    let settings = sync_software_settings_state_async(app, &state).await?;
     let close_to_tray = settings.close_to_tray;
     Ok(close_to_tray)
 }
 
 #[tauri::command]
-pub fn ds5_get_software_settings(app: AppHandle, state: State<'_, TrayState>) -> Result<SoftwareSettingsDto, String> {
-    let settings = sync_software_settings_state(&app, &state)?;
+pub async fn ds5_get_software_settings(app: AppHandle, state: State<'_, TrayState>) -> Result<SoftwareSettingsDto, String> {
+    let settings = sync_software_settings_state_async(app, &state).await?;
     Ok(settings.into())
 }
 
 #[tauri::command]
-pub fn ds5_set_low_battery_notification_enabled(app: AppHandle, state: State<'_, TrayState>, enabled: bool) -> Result<(), String> {
-    let mut settings = load_software_settings(&app)?;
+pub async fn ds5_set_low_battery_notification_enabled(app: AppHandle, state: State<'_, TrayState>, enabled: bool) -> Result<(), String> {
+    let mut settings = load_software_settings_async(app.clone()).await?;
     settings.low_battery_notification_enabled = enabled;
     if !enabled {
         if let Ok(mut notified_keys) = state.low_battery_notified_keys.lock() {
             notified_keys.clear();
         }
     }
-    save_software_settings(&app, settings.clone())?;
+    save_software_settings_async(app.clone(), settings.clone()).await?;
     emit_software_settings_changed(&app, settings);
     Ok(())
 }
 
 #[tauri::command]
-pub fn ds5_get_low_battery_notification_enabled(app: AppHandle) -> Result<bool, String> {
-    Ok(load_software_settings(&app)?.low_battery_notification_enabled)
+pub async fn ds5_get_low_battery_notification_enabled(app: AppHandle) -> Result<bool, String> {
+    Ok(load_software_settings_async(app).await?.low_battery_notification_enabled)
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ControllerNotificationSound {
     Connected,
@@ -424,31 +425,31 @@ pub enum ControllerNotificationSound {
 }
 
 #[tauri::command]
-pub fn ds5_set_controller_notification_sound_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
-    let mut settings = load_software_settings(&app)?;
+pub async fn ds5_set_controller_notification_sound_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = load_software_settings_async(app.clone()).await?;
     settings.controller_notification_sound_enabled = enabled;
-    save_software_settings(&app, settings.clone())?;
+    save_software_settings_async(app.clone(), settings.clone()).await?;
     emit_software_settings_changed(&app, settings);
     Ok(())
 }
 
 #[tauri::command]
-pub fn ds5_get_controller_notification_sound_enabled(app: AppHandle) -> Result<bool, String> {
-    Ok(load_software_settings(&app)?.controller_notification_sound_enabled)
+pub async fn ds5_get_controller_notification_sound_enabled(app: AppHandle) -> Result<bool, String> {
+    Ok(load_software_settings_async(app).await?.controller_notification_sound_enabled)
 }
 
 #[tauri::command]
-pub fn ds5_get_controller_notification_sound_volumes(app: AppHandle) -> Result<ControllerNotificationSoundVolumes, String> {
-    Ok(load_software_settings(&app)?.controller_notification_sound_volumes.normalized())
+pub async fn ds5_get_controller_notification_sound_volumes(app: AppHandle) -> Result<ControllerNotificationSoundVolumes, String> {
+    Ok(load_software_settings_async(app).await?.controller_notification_sound_volumes.normalized())
 }
 
 #[tauri::command]
-pub fn ds5_set_controller_notification_sound_volume(
+pub async fn ds5_set_controller_notification_sound_volume(
     app: AppHandle,
     sound: ControllerNotificationSound,
     volume: f32,
 ) -> Result<ControllerNotificationSoundVolumes, String> {
-    let mut settings = load_software_settings(&app)?;
+    let mut settings = load_software_settings_async(app.clone()).await?;
     let normalized_volume = normalize_volume(volume);
     match sound {
         ControllerNotificationSound::Connected => settings.controller_notification_sound_volumes.connected = normalized_volume,
@@ -456,32 +457,36 @@ pub fn ds5_set_controller_notification_sound_volume(
         ControllerNotificationSound::LowBattery => settings.controller_notification_sound_volumes.low_battery = normalized_volume,
     }
     settings.controller_notification_sound_volumes = settings.controller_notification_sound_volumes.normalized();
-    save_software_settings(&app, settings.clone())?;
+    save_software_settings_async(app.clone(), settings.clone()).await?;
     emit_software_settings_changed(&app, settings.clone());
     Ok(settings.controller_notification_sound_volumes)
 }
 
 #[tauri::command]
-pub fn ds5_reset_controller_notification_sound_volumes(app: AppHandle) -> Result<ControllerNotificationSoundVolumes, String> {
-    let mut settings = load_software_settings(&app)?;
+pub async fn ds5_reset_controller_notification_sound_volumes(app: AppHandle) -> Result<ControllerNotificationSoundVolumes, String> {
+    let mut settings = load_software_settings_async(app.clone()).await?;
     settings.controller_notification_sound_volumes = ControllerNotificationSoundVolumes::default();
-    save_software_settings(&app, settings.clone())?;
+    save_software_settings_async(app.clone(), settings.clone()).await?;
     emit_software_settings_changed(&app, settings.clone());
     Ok(settings.controller_notification_sound_volumes)
 }
 
 #[tauri::command]
-pub fn ds5_play_controller_notification_sound(app: AppHandle, sound: ControllerNotificationSound) -> Result<(), String> {
-    play_controller_notification_sound(&app, sound)
+pub async fn ds5_play_controller_notification_sound(app: AppHandle, sound: ControllerNotificationSound) -> Result<(), String> {
+    let settings = load_software_settings_async(app.clone()).await?;
+    play_controller_notification_sound_with_settings(&app, sound, &settings)
 }
 
-fn play_controller_notification_sound(app: &AppHandle, sound: ControllerNotificationSound) -> Result<(), String> {
-    let settings = load_software_settings(app)?;
+fn play_controller_notification_sound_with_settings(
+    app: &AppHandle,
+    sound: ControllerNotificationSound,
+    settings: &SoftwareSettings,
+) -> Result<(), String> {
     if !settings.controller_notification_sound_enabled {
         return Ok(());
     }
 
-    let volume = settings.controller_notification_sound_volumes.normalized().volume_for(&sound);
+    let volume = settings.clone().controller_notification_sound_volumes.normalized().volume_for(&sound);
     if volume <= 0.0 {
         return Ok(());
     }
@@ -529,7 +534,10 @@ fn software_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn load_software_settings(app: &AppHandle) -> Result<SoftwareSettings, String> {
-    let path = software_settings_path(app)?;
+    load_software_settings_from_path(software_settings_path(app)?)
+}
+
+fn load_software_settings_from_path(path: PathBuf) -> Result<SoftwareSettings, String> {
     if !path.exists() {
         return Ok(SoftwareSettings::default());
     }
@@ -538,8 +546,14 @@ fn load_software_settings(app: &AppHandle) -> Result<SoftwareSettings, String> {
     serde_json::from_str(&contents).map_err(|error| error.to_string())
 }
 
-fn save_software_settings(app: &AppHandle, settings: SoftwareSettings) -> Result<(), String> {
-    let path = software_settings_path(app)?;
+async fn load_software_settings_async(app: AppHandle) -> Result<SoftwareSettings, String> {
+    let path = software_settings_path(&app)?;
+    tauri::async_runtime::spawn_blocking(move || load_software_settings_from_path(path))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn save_software_settings_to_path(path: PathBuf, settings: SoftwareSettings) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
@@ -548,12 +562,25 @@ fn save_software_settings(app: &AppHandle, settings: SoftwareSettings) -> Result
     fs::write(path, contents).map_err(|error| error.to_string())
 }
 
+async fn save_software_settings_async(app: AppHandle, settings: SoftwareSettings) -> Result<(), String> {
+    let path = software_settings_path(&app)?;
+    tauri::async_runtime::spawn_blocking(move || save_software_settings_to_path(path, settings))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
 pub fn sync_close_to_tray_state(app: &AppHandle, state: &State<'_, TrayState>) -> Result<(), String> {
     sync_software_settings_state(app, state).map(|_| ())
 }
 
 fn sync_software_settings_state(app: &AppHandle, state: &State<'_, TrayState>) -> Result<SoftwareSettings, String> {
     let settings = load_software_settings(app)?;
+    update_close_to_tray_state(state, settings.close_to_tray, settings.close_to_tray_asked)?;
+    Ok(settings)
+}
+
+async fn sync_software_settings_state_async(app: AppHandle, state: &State<'_, TrayState>) -> Result<SoftwareSettings, String> {
+    let settings = load_software_settings_async(app).await?;
     update_close_to_tray_state(state, settings.close_to_tray, settings.close_to_tray_asked)?;
     Ok(settings)
 }
