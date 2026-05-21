@@ -104,9 +104,13 @@ pub fn ds5_get_system_info() -> SystemInfoDto {
 }
 
 #[tauri::command]
-pub fn ds5_list_devices() -> Result<Vec<HidDeviceInfoDto>, String> {
-    let api = HidApi::new().map_err(error_to_string)?;
-    Ok(collect_supported_devices(&api))
+pub async fn ds5_list_devices() -> Result<Vec<HidDeviceInfoDto>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let api = HidApi::new().map_err(error_to_string)?;
+        Ok(collect_supported_devices(&api))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -142,42 +146,54 @@ pub fn ds5_start_device_monitor(app: AppHandle, state: State<'_, DeviceMonitorSt
 }
 
 #[tauri::command]
-pub fn ds5_read_feature_report(path: String, report_id: u8, length: usize) -> Result<Vec<u8>, String> {
-    let api = HidApi::new().map_err(error_to_string)?;
-    let device = open_device_by_path(&api, &path)?;
-    let mut buffer = vec![0_u8; length.max(1)];
-    buffer[0] = report_id;
-    let count = device.get_feature_report(&mut buffer).map_err(error_to_string)?;
-    buffer.truncate(count);
-    Ok(buffer)
+pub async fn ds5_read_feature_report(path: String, report_id: u8, length: usize) -> Result<Vec<u8>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let api = HidApi::new().map_err(error_to_string)?;
+        let device = open_device_by_path(&api, &path)?;
+        let mut buffer = vec![0_u8; length.max(1)];
+        buffer[0] = report_id;
+        let count = device.get_feature_report(&mut buffer).map_err(error_to_string)?;
+        buffer.truncate(count);
+        Ok(buffer)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn ds5_send_feature_report(path: String, report_id: u8, data: Vec<u8>) -> Result<(), String> {
-    let api = HidApi::new().map_err(error_to_string)?;
-    let device = open_device_by_path(&api, &path)?;
-    let mut buffer = Vec::with_capacity(data.len() + 1);
-    buffer.push(report_id);
-    buffer.extend_from_slice(&data);
-    device.send_feature_report(&buffer).map_err(error_to_string)?;
-    Ok(())
+pub async fn ds5_send_feature_report(path: String, report_id: u8, data: Vec<u8>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let api = HidApi::new().map_err(error_to_string)?;
+        let device = open_device_by_path(&api, &path)?;
+        let mut buffer = Vec::with_capacity(data.len() + 1);
+        buffer.push(report_id);
+        buffer.extend_from_slice(&data);
+        device.send_feature_report(&buffer).map_err(error_to_string)?;
+        Ok(())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn ds5_read_input_report(path: String, timeout_ms: i32, length: usize) -> Result<Option<Vec<u8>>, String> {
-    let api = HidApi::new().map_err(error_to_string)?;
-    let device = open_device_by_path(&api, &path)?;
-    let mut buffer = vec![0_u8; length.max(1)];
-    let count = device
-        .read_timeout(&mut buffer, timeout_ms.max(0))
-        .map_err(error_to_string)?;
+pub async fn ds5_read_input_report(path: String, timeout_ms: i32, length: usize) -> Result<Option<Vec<u8>>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let api = HidApi::new().map_err(error_to_string)?;
+        let device = open_device_by_path(&api, &path)?;
+        let mut buffer = vec![0_u8; length.max(1)];
+        let count = device
+            .read_timeout(&mut buffer, timeout_ms.max(0))
+            .map_err(error_to_string)?;
 
-    if count == 0 {
-        return Ok(None);
-    }
+        if count == 0 {
+            return Ok(None);
+        }
 
-    buffer.truncate(count);
-    Ok(Some(buffer))
+        buffer.truncate(count);
+        Ok(Some(buffer))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]

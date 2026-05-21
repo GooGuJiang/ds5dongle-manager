@@ -28,10 +28,11 @@ import {
 type Operation = "connecting" | "reading" | "applying" | "saving" | "reconnecting" | null;
 type SaveState = "idle" | "dirty" | "applied" | "saved";
 type UsbEffectiveConfig = Pick<ConfigBody, "pollingRateMode" | "controllerMode">;
-const BATTERY_REFRESH_INTERVAL_MS = 15_000;
-const DEVICE_DISCOVERY_INTERVAL_MS = 2_000;
-const PICO_INFO_REFRESH_INTERVAL_MS = 5_000;
-const BATTERY_LISTEN_TIMEOUT_MS = 1_200;
+const BATTERY_REFRESH_INTERVAL_MS = 60_000;
+const DEVICE_DISCOVERY_FALLBACK_INTERVAL_MS = 30_000;
+const PICO_INFO_REFRESH_INTERVAL_MS = 60_000;
+const BATTERY_LISTEN_TIMEOUT_MS = 300;
+const AUTHORIZED_DEVICE_INFO_REFRESH_INTERVAL_MS = 5 * 60_000;
 const SWITCH_RECONNECT_WINDOW_MS = 30_000;
 const LOW_BATTERY_THRESHOLD_PERCENT = 15;
 
@@ -118,6 +119,10 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   const [authorizedDeviceSignalStrength, setAuthorizedDeviceSignalStrength] = useState<Record<string, string>>({});
   const [settledStatusText, setSettledStatusText] = useState(t("status.ready"));
   const clientRef = useRef<Ds5BridgeHidClient | null>(null);
+  const batteryTextRef = useRef("--");
+  const firmwareVersionRef = useRef("--");
+  const signalStrengthRef = useRef("--");
+  const deviceSerialNumberRef = useRef("--");
   const configRef = useRef<ConfigBody | null>(null);
   const draftRef = useRef<ConfigBody>(DEFAULT_CONFIG);
   const usbEffectiveConfigRef = useRef<UsbEffectiveConfig | null>(null);
@@ -132,6 +137,7 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   const reconnectingDeviceTimeoutRef = useRef<number | null>(null);
   const authorizedDeviceInfoScanIdRef = useRef(0);
   const pendingChangedFieldsRef = useRef<Set<keyof ConfigBody>>(new Set());
+  const windowVisibleRef = useRef(typeof document === "undefined" ? true : document.visibilityState === "visible");
   const lowBatteryNotificationEnabledRef = useRef(true);
   const lowBatteryNotifiedKeyRef = useRef<Set<string>>(new Set());
   const controllerNotificationSoundEnabledRef = useRef(true);
@@ -168,58 +174,65 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     return () => window.clearTimeout(timer);
   }, [statusText]);
 
+  useEffect(() => {
+    batteryTextRef.current = batteryText;
+  }, [batteryText]);
+
+  useEffect(() => {
+    firmwareVersionRef.current = firmwareVersion;
+  }, [firmwareVersion]);
+
+  useEffect(() => {
+    signalStrengthRef.current = signalStrength;
+  }, [signalStrength]);
+
+  useEffect(() => {
+    deviceSerialNumberRef.current = deviceSerialNumber;
+  }, [deviceSerialNumber]);
+
+  const setAuthorizedDevicesIfChanged = useCallback((nextDevices: HIDDevice[]) => {
+    setAuthorizedDevices((currentDevices) => devicesEqual(currentDevices, nextDevices) ? currentDevices : nextDevices);
+  }, []);
+
   const refreshAuthorizedDevices = useCallback(async () => {
     if (!supported) {
-      setAuthorizedDevices([]);
+      setAuthorizedDevicesIfChanged([]);
       return;
     }
 
-    setAuthorizedDevices(await Ds5BridgeHidClient.authorizedDevices());
-  }, [supported]);
+    setAuthorizedDevicesIfChanged(await Ds5BridgeHidClient.authorizedDevices());
+  }, [setAuthorizedDevicesIfChanged, supported]);
 
   const scanAuthorizedDeviceInfo = useCallback(async (devices: HIDDevice[]) => {
     const scanId = authorizedDeviceInfoScanIdRef.current + 1;
     authorizedDeviceInfoScanIdRef.current = scanId;
 
-    const entries = await Promise.all(
-      devices.map(async (device) => {
-        if (clientRef.current?.device === device) {
-          return [getDeviceKey(device), { batteryText, serialNumber: deviceSerialNumber, firmwareVersion, signalStrength }] as const;
+    const entries = devices.map((device) => [
+      getDeviceKey(device),
+      clientRef.current?.device === device
+        ? {
+          batteryText: batteryTextRef.current,
+          serialNumber: deviceSerialNumberRef.current,
+          firmwareVersion: firmwareVersionRef.current,
+          signalStrength: signalStrengthRef.current,
         }
-
-        const nextClient = new Ds5BridgeHidClient(device);
-        try {
-          const [nextBatteryText, nextSerialNumber, nextFirmwareVersion, nextSignalStrength] = await Promise.all([
-            nextClient.readBatteryText(900).catch(() => null),
-            nextClient.readSerialNumber().catch(() => "--"),
-            nextClient.readFirmwareVersion().catch(() => "--"),
-            nextClient.readSignalStrength().then(formatSignalStrength).catch(() => "--"),
-          ]);
-          await nextClient.close();
-          return [
-            getDeviceKey(device),
-            {
-              batteryText: nextBatteryText ?? "--",
-              serialNumber: nextSerialNumber || "--",
-              firmwareVersion: nextFirmwareVersion || "--",
-              signalStrength: nextSignalStrength,
-            },
-          ] as const;
-        } catch {
-          return [getDeviceKey(device), { batteryText: "--", serialNumber: "--", firmwareVersion: "--", signalStrength: "--" }] as const;
-        }
-      }),
-    );
+        : {
+          batteryText: authorizedDeviceBatteryText[getDeviceKey(device)] ?? "--",
+          serialNumber: authorizedDeviceSerialNumber[getDeviceKey(device)] ?? device.serialNumber?.trim() ?? "--",
+          firmwareVersion: authorizedDeviceFirmwareVersion[getDeviceKey(device)] ?? "--",
+          signalStrength: authorizedDeviceSignalStrength[getDeviceKey(device)] ?? "--",
+        },
+    ] as const);
 
     if (authorizedDeviceInfoScanIdRef.current !== scanId) {
       return;
     }
 
-    setAuthorizedDeviceBatteryText(Object.fromEntries(entries.map(([key, value]) => [key, value.batteryText])));
-    setAuthorizedDeviceSerialNumber(Object.fromEntries(entries.map(([key, value]) => [key, value.serialNumber])));
-    setAuthorizedDeviceFirmwareVersion(Object.fromEntries(entries.map(([key, value]) => [key, value.firmwareVersion])));
-    setAuthorizedDeviceSignalStrength(Object.fromEntries(entries.map(([key, value]) => [key, value.signalStrength])));
-  }, [batteryText, deviceSerialNumber, firmwareVersion, signalStrength]);
+    setAuthorizedDeviceBatteryText((current) => replaceRecordIfChanged(current, Object.fromEntries(entries.map(([key, value]) => [key, value.batteryText]))));
+    setAuthorizedDeviceSerialNumber((current) => replaceRecordIfChanged(current, Object.fromEntries(entries.map(([key, value]) => [key, value.serialNumber]))));
+    setAuthorizedDeviceFirmwareVersion((current) => replaceRecordIfChanged(current, Object.fromEntries(entries.map(([key, value]) => [key, value.firmwareVersion]))));
+    setAuthorizedDeviceSignalStrength((current) => replaceRecordIfChanged(current, Object.fromEntries(entries.map(([key, value]) => [key, value.signalStrength]))));
+  }, [authorizedDeviceBatteryText, authorizedDeviceFirmwareVersion, authorizedDeviceSerialNumber, authorizedDeviceSignalStrength]);
 
   const readConfigWithClient = useCallback(async (nextClient: Ds5BridgeHidClient, syncUsbEffectiveConfig = false) => {
     setOperation("reading");
@@ -711,11 +724,21 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     let disposed = false;
     let unlisten: (() => void) | null = null;
 
+    const handleVisibilityChange = () => {
+      windowVisibleRef.current = document.visibilityState === "visible";
+      if (windowVisibleRef.current) {
+        void refreshAuthorizedDevices();
+      }
+    };
+
+    windowVisibleRef.current = document.visibilityState === "visible";
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     void startDeviceMonitor().catch(() => undefined);
     void listen<TauriHidDeviceInfo[]>("ds5-devices-changed", (event) => {
       if (!disposed) {
         const nextDevices = tauriDeviceInfosToHidDevices(event.payload);
-        setAuthorizedDevices(nextDevices);
+        setAuthorizedDevicesIfChanged(nextDevices);
 
         const connectedClient = clientRef.current;
         if (connectedClient && !deviceListIncludes(nextDevices, connectedClient.device)) {
@@ -731,15 +754,18 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     });
 
     const intervalId = window.setInterval(() => {
-      void refreshAuthorizedDevices();
-    }, DEVICE_DISCOVERY_INTERVAL_MS);
+      if (windowVisibleRef.current) {
+        void refreshAuthorizedDevices();
+      }
+    }, DEVICE_DISCOVERY_FALLBACK_INTERVAL_MS);
 
     return () => {
       disposed = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.clearInterval(intervalId);
       unlisten?.();
     };
-  }, [handleConnectedDeviceDisconnected, refreshAuthorizedDevices, supported]);
+  }, [handleConnectedDeviceDisconnected, refreshAuthorizedDevices, setAuthorizedDevicesIfChanged, supported]);
 
   useEffect(() => {
     const connectedClient = clientRef.current;
@@ -761,6 +787,13 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     }
 
     void scanAuthorizedDeviceInfo(authorizedDevices);
+    const intervalId = window.setInterval(() => {
+      if (windowVisibleRef.current) {
+        void scanAuthorizedDeviceInfo(authorizedDevices);
+      }
+    }, AUTHORIZED_DEVICE_INFO_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
   }, [authorizedDevices, scanAuthorizedDeviceInfo]);
 
   useEffect(() => {
@@ -802,7 +835,9 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     }
 
     const refreshBatteryInfo = () => {
-      void refreshAuthorizedDevices();
+      if (!windowVisibleRef.current) {
+        return;
+      }
 
       const connectedClient = clientRef.current;
       if (connectedClient?.device.opened) {
@@ -821,7 +856,7 @@ export function useDs5Bridge(): UseDs5BridgeResult {
 
     const intervalId = window.setInterval(refreshBatteryInfo, BATTERY_REFRESH_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
-  }, [handleConnectedDeviceDisconnected, refreshAuthorizedDevices, supported, updateLowBatterySoundState]);
+  }, [handleConnectedDeviceDisconnected, supported, updateLowBatterySoundState]);
 
   useEffect(() => {
     const batteries = authorizedDevices.map((device, index) => {
@@ -860,6 +895,10 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     }
 
     const refreshConnectedPicoInfo = () => {
+      if (!windowVisibleRef.current) {
+        return;
+      }
+
       const currentClient = clientRef.current;
       if (currentClient?.device.opened) {
         void refreshPicoInfo(currentClient, setFirmwareVersion, setSignalStrength).catch(() => {
@@ -1041,6 +1080,24 @@ function preservePollingRateForControllerOnlyChange(
 function deviceListIncludes(devices: HIDDevice[], target: HIDDevice): boolean {
   const targetKey = getDeviceKey(target);
   return devices.some((device) => getDeviceKey(device) === targetKey);
+}
+
+function devicesEqual(left: HIDDevice[], right: HIDDevice[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((device, index) => getDeviceKey(device) === getDeviceKey(right[index]));
+}
+
+function replaceRecordIfChanged(current: Record<string, string>, next: Record<string, string>): Record<string, string> {
+  const currentKeys = Object.keys(current);
+  const nextKeys = Object.keys(next);
+  if (currentKeys.length !== nextKeys.length) {
+    return next;
+  }
+
+  return nextKeys.every((key) => current[key] === next[key]) ? current : next;
 }
 
 function usbEffectiveConfigChanged(current: UsbEffectiveConfig | null, next: ConfigBody): boolean {
