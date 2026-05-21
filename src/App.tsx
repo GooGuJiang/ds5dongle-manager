@@ -14,12 +14,22 @@ import { useDs5Bridge } from "./hooks/useDs5Bridge";
 import { useTheme } from "./hooks/useTheme";
 import { checkFirmwareUpdate, shouldCheckFirmwareUpdate, type FirmwareUpdateCheckResult } from "./lib/firmwareRelease";
 import { checkSoftwareUpdate, getSoftwareSystemInfo, type SoftwareSystemInfo, type SoftwareUpdateCheckResult } from "./lib/softwareRelease";
+import { TrayPopup } from "./components/TrayPopup";
+import { ControllerNotificationPopup } from "./components/ControllerNotificationPopup";
 
 const FirmwareUpdateDialog = lazy(() => import("./components/FirmwareUpdateDialog").then((module) => ({ default: module.FirmwareUpdateDialog })));
 const SoftwareUpdateDialog = lazy(() => import("./components/SoftwareUpdateDialog").then((module) => ({ default: module.SoftwareUpdateDialog })));
 const SettingsView = lazy(() => import("./components/SettingsView").then((module) => ({ default: module.SettingsView })));
 
 export default function App() {
+  if (new URLSearchParams(window.location.search).get("tray") === "1") {
+    return <TrayPopup />;
+  }
+
+  if (new URLSearchParams(window.location.search).get("controllerNotification") === "1") {
+    return <ControllerNotificationPopup />;
+  }
+
   const bridge = useDs5Bridge();
   const theme = useTheme();
   const { t } = useTranslation();
@@ -202,6 +212,7 @@ export default function App() {
       <Toaster
         position="top-right"
         toastOptions={APP_TOAST_OPTIONS}
+        containerStyle={{ top: 60 }}
       />
       {firmwareUpdateResult?.updateAvailable && (
         <Suspense fallback={null}>
@@ -242,6 +253,12 @@ export default function App() {
           onResetToDefaults={bridge.resetToDefaults}
           lowBatteryNotificationEnabled={bridge.lowBatteryNotificationEnabled}
           onLowBatteryNotificationEnabledChange={bridge.setLowBatteryNotificationEnabled}
+          controllerConnectionPopupEnabled={bridge.controllerConnectionPopupEnabled}
+          controllerLowBatteryPopupEnabled={bridge.controllerLowBatteryPopupEnabled}
+          controllerNotificationPopupDurationMs={bridge.controllerNotificationPopupDurationMs}
+          onControllerConnectionPopupEnabledChange={bridge.setControllerConnectionPopupEnabled}
+          onControllerLowBatteryPopupEnabledChange={bridge.setControllerLowBatteryPopupEnabled}
+          onControllerNotificationPopupDurationMsChange={bridge.setControllerNotificationPopupDurationMs}
           controllerNotificationSoundEnabled={bridge.controllerNotificationSoundEnabled}
           controllerNotificationSoundVolumes={bridge.controllerNotificationSoundVolumes}
           onControllerNotificationSoundEnabledChange={bridge.setControllerNotificationSoundEnabled}

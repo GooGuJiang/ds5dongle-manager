@@ -1,3 +1,7 @@
+use crate::app_config::{
+    CONTROLLER_CONNECTED_SOUND, CONTROLLER_DISCONNECTED_SOUND, CONTROLLER_LOW_BATTERY_SOUND,
+    LOW_BATTERY_THRESHOLD_PERCENT, SOFTWARE_SETTINGS_FILE_NAME,
+};
 use crate::hid::{collect_supported_devices, devices_snapshot, error_to_string, open_device_by_path, HidDeviceInfoDto};
 use crate::state::{DeviceMonitorState, TrayState};
 use hidapi::HidApi;
@@ -12,13 +16,6 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri::path::BaseDirectory;
-use tauri_plugin_notification::NotificationExt;
-
-const SOFTWARE_SETTINGS_FILE_NAME: &str = "software-settings.json";
-const LOW_BATTERY_THRESHOLD_PERCENT: u8 = 15;
-const CONTROLLER_CONNECTED_SOUND: &str = "resources/sounds/controller-connected.wav";
-const CONTROLLER_DISCONNECTED_SOUND: &str = "resources/sounds/controller-disconnected.wav";
-const CONTROLLER_LOW_BATTERY_SOUND: &str = "resources/sounds/controller-low-battery.wav";
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -26,6 +23,9 @@ struct SoftwareSettings {
     close_to_tray: bool,
     close_to_tray_asked: bool,
     low_battery_notification_enabled: bool,
+    controller_connection_popup_enabled: bool,
+    controller_low_battery_popup_enabled: bool,
+    controller_notification_popup_duration_ms: u64,
     controller_notification_sound_enabled: bool,
     controller_notification_sound_volumes: ControllerNotificationSoundVolumes,
 }
@@ -36,6 +36,9 @@ impl Default for SoftwareSettings {
             close_to_tray: false,
             close_to_tray_asked: false,
             low_battery_notification_enabled: true,
+            controller_connection_popup_enabled: true,
+            controller_low_battery_popup_enabled: true,
+            controller_notification_popup_duration_ms: 4_000,
             controller_notification_sound_enabled: true,
             controller_notification_sound_volumes: ControllerNotificationSoundVolumes::default(),
         }
@@ -84,6 +87,9 @@ pub struct SoftwareSettingsDto {
     pub close_to_tray: bool,
     pub close_to_tray_asked: bool,
     pub low_battery_notification_enabled: bool,
+    pub controller_connection_popup_enabled: bool,
+    pub controller_low_battery_popup_enabled: bool,
+    pub controller_notification_popup_duration_ms: u64,
     pub controller_notification_sound_enabled: bool,
     pub controller_notification_sound_volumes: ControllerNotificationSoundVolumes,
 }
@@ -101,6 +107,95 @@ pub fn ds5_get_system_info() -> SystemInfoDto {
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
     }
+}
+
+#[tauri::command]
+pub fn ds5_open_main_window(app: AppHandle) {
+    crate::open_main_window_from_tray(&app);
+}
+
+#[tauri::command]
+pub fn ds5_hide_tray_popup(app: AppHandle) {
+    crate::hide_tray_popup(&app);
+}
+
+#[tauri::command]
+pub fn ds5_show_controller_notification(
+    app: AppHandle,
+    kind: Option<String>,
+    device_label: String,
+    icon_src: Option<String>,
+    battery_text: String,
+    battery_texts: Option<Vec<String>>,
+) {
+    let normalized_battery_texts = normalize_controller_notification_batteries(&battery_text, battery_texts);
+    crate::show_controller_notification(
+        &app,
+        crate::ControllerNotificationPayload {
+            kind: kind
+                .map(|value| value.trim().to_string())
+                .filter(|value| matches!(value.as_str(), "connected" | "disconnected" | "lowBattery"))
+                .unwrap_or_else(|| "connected".to_string()),
+            device_label,
+            icon_src: icon_src
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "/svg/ps5-controller-gamepad-seeklogo.svg".to_string()),
+            battery_text,
+            battery_texts: normalized_battery_texts,
+            duration_ms: None,
+        },
+    );
+}
+
+fn normalize_controller_notification_batteries(battery_text: &str, battery_texts: Option<Vec<String>>) -> Vec<String> {
+    let values = battery_texts.unwrap_or_default();
+    let normalized: Vec<String> = values
+        .into_iter()
+        .flat_map(|value| split_battery_text(&value))
+        .filter(|value| !value.is_empty() && value != "--")
+        .collect();
+
+    if !normalized.is_empty() {
+        return normalized;
+    }
+
+    split_battery_text(battery_text)
+        .into_iter()
+        .filter(|value| !value.is_empty() && value != "--")
+        .collect()
+}
+
+fn split_battery_text(value: &str) -> Vec<String> {
+    value
+        .split(|character| matches!(character, '/' | '|' | '\n' | '\r'))
+        .map(|part| part.trim().to_string())
+        .filter(|part| !part.is_empty())
+        .collect()
+}
+
+#[tauri::command]
+pub fn ds5_hide_controller_notification(app: AppHandle) {
+    crate::hide_controller_notification(&app);
+}
+
+#[tauri::command]
+pub fn ds5_make_controller_notification_input_safe(app: AppHandle) -> Result<(), String> {
+    crate::make_controller_notification_input_safe(&app)
+}
+
+#[tauri::command]
+pub fn ds5_get_tray_batteries(state: State<'_, TrayState>) -> Vec<String> {
+    state
+        .battery_values
+        .lock()
+        .map(|values| values.clone())
+        .unwrap_or_else(|_| Vec::new())
+}
+
+#[tauri::command]
+pub fn ds5_quit_app(app: AppHandle) {
+    app.exit(0);
 }
 
 #[tauri::command]
@@ -202,27 +297,38 @@ pub async fn ds5_update_tray_batteries(
     state: State<'_, TrayState>,
     batteries: Vec<crate::state::TrayBatteryStatus>,
 ) -> Result<(), String> {
+    let battery_lines = normalize_tray_battery_values(batteries.clone());
+    let changed = if let Ok(mut current_values) = state.battery_values.lock() {
+        if *current_values == battery_lines {
+            false
+        } else {
+            *current_values = battery_lines.clone();
+            true
+        }
+    } else {
+        true
+    };
+
+    if !changed {
+        return Ok(());
+    }
+
+    let settings = load_software_settings_async(app.clone()).await?;
+    process_low_battery_notifications(&app, &state, &settings, &batteries);
+
     let labels = if let Ok(labels) = state.labels.lock() {
         labels.clone()
     } else {
         crate::state::TrayLabels::fallback()
     };
-
-    let settings = load_software_settings_async(app.clone()).await?;
-    process_low_battery_notifications(&app, &state, &settings, &batteries);
-
-    let battery_lines = normalize_tray_battery_values(batteries);
+    crate::resize_tray_popup(&app);
+    let _ = app.emit("ds5-tray-batteries-changed", battery_lines.clone());
     let menu_text = format_tray_menu_battery_text(&labels, &battery_lines);
     let tooltip_text = format!("DS5 Dongle Manager\n{}", battery_lines.join("\n"));
 
-    if let Ok(mut current_values) = state.battery_values.lock() {
-        *current_values = battery_lines;
-    }
-
-    if let Ok(battery_item) = state.battery_item.lock() {
-        if let Some(item) = battery_item.as_ref() {
-            item.set_text(&menu_text).map_err(|error| error.to_string())?;
-        }
+    let battery_item = state.battery_item.lock().ok().and_then(|item| item.clone());
+    if let Some(item) = battery_item.as_ref() {
+        item.set_text(&menu_text).map_err(|error| error.to_string())?;
     }
 
     if let Some(tray) = app.tray_by_id("main") {
@@ -289,16 +395,6 @@ fn process_low_battery_notifications(
             continue;
         }
 
-        let label = status.label.trim();
-        let device_name = if label.is_empty() { "Controller" } else { label };
-        let battery_text = status.battery_text.trim();
-        let body = format!("{device_name} battery is {battery_text}. Please charge it soon.");
-        let _ = app
-            .notification()
-            .builder()
-            .title("Controller battery low")
-            .body(body)
-            .show();
         let _ = play_controller_notification_sound_with_settings(app, ControllerNotificationSound::LowBattery, settings);
     }
 }
@@ -337,16 +433,14 @@ pub fn ds5_update_tray_labels(app: AppHandle, state: State<'_, TrayState>, label
         *current_labels = labels.clone();
     }
 
-    if let Ok(open_window_item) = state.open_window_item.lock() {
-        if let Some(item) = open_window_item.as_ref() {
-            item.set_text(&labels.open_window).map_err(|error| error.to_string())?;
-        }
+    let open_window_item = state.open_window_item.lock().ok().and_then(|item| item.clone());
+    if let Some(item) = open_window_item.as_ref() {
+        item.set_text(&labels.open_window).map_err(|error| error.to_string())?;
     }
 
-    if let Ok(quit_item) = state.quit_item.lock() {
-        if let Some(item) = quit_item.as_ref() {
-            item.set_text(&labels.quit).map_err(|error| error.to_string())?;
-        }
+    let quit_item = state.quit_item.lock().ok().and_then(|item| item.clone());
+    if let Some(item) = quit_item.as_ref() {
+        item.set_text(&labels.quit).map_err(|error| error.to_string())?;
     }
 
     let battery_values = if let Ok(current_values) = state.battery_values.lock() {
@@ -356,10 +450,9 @@ pub fn ds5_update_tray_labels(app: AppHandle, state: State<'_, TrayState>, label
     };
     let menu_text = format_tray_menu_battery_text(&labels, &battery_values);
 
-    if let Ok(battery_item) = state.battery_item.lock() {
-        if let Some(item) = battery_item.as_ref() {
-            item.set_text(&menu_text).map_err(|error| error.to_string())?;
-        }
+    let battery_item = state.battery_item.lock().ok().and_then(|item| item.clone());
+    if let Some(item) = battery_item.as_ref() {
+        item.set_text(&menu_text).map_err(|error| error.to_string())?;
     }
 
     if let Some(tray) = app.tray_by_id("main") {
@@ -414,6 +507,48 @@ pub async fn ds5_set_low_battery_notification_enabled(app: AppHandle, state: Sta
 #[tauri::command]
 pub async fn ds5_get_low_battery_notification_enabled(app: AppHandle) -> Result<bool, String> {
     Ok(load_software_settings_async(app).await?.low_battery_notification_enabled)
+}
+
+#[tauri::command]
+pub async fn ds5_set_controller_connection_popup_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = load_software_settings_async(app.clone()).await?;
+    settings.controller_connection_popup_enabled = enabled;
+    save_software_settings_async(app.clone(), settings.clone()).await?;
+    emit_software_settings_changed(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn ds5_get_controller_connection_popup_enabled(app: AppHandle) -> Result<bool, String> {
+    Ok(load_software_settings_async(app).await?.controller_connection_popup_enabled)
+}
+
+#[tauri::command]
+pub async fn ds5_set_controller_low_battery_popup_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = load_software_settings_async(app.clone()).await?;
+    settings.controller_low_battery_popup_enabled = enabled;
+    save_software_settings_async(app.clone(), settings.clone()).await?;
+    emit_software_settings_changed(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn ds5_get_controller_low_battery_popup_enabled(app: AppHandle) -> Result<bool, String> {
+    Ok(load_software_settings_async(app).await?.controller_low_battery_popup_enabled)
+}
+
+#[tauri::command]
+pub async fn ds5_set_controller_notification_popup_duration_ms(app: AppHandle, duration_ms: u64) -> Result<u64, String> {
+    let mut settings = load_software_settings_async(app.clone()).await?;
+    settings.controller_notification_popup_duration_ms = normalize_popup_duration_ms(duration_ms);
+    save_software_settings_async(app.clone(), settings.clone()).await?;
+    emit_software_settings_changed(&app, settings.clone());
+    Ok(settings.controller_notification_popup_duration_ms)
+}
+
+#[tauri::command]
+pub async fn ds5_get_controller_notification_popup_duration_ms(app: AppHandle) -> Result<u64, String> {
+    Ok(normalize_popup_duration_ms(load_software_settings_async(app).await?.controller_notification_popup_duration_ms))
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -526,6 +661,10 @@ fn normalize_volume(volume: f32) -> f32 {
     }
 }
 
+fn normalize_popup_duration_ms(duration_ms: u64) -> u64 {
+    duration_ms.clamp(2_000, 15_000)
+}
+
 fn software_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_config_dir()
@@ -601,6 +740,9 @@ impl From<SoftwareSettings> for SoftwareSettingsDto {
             close_to_tray: settings.close_to_tray,
             close_to_tray_asked: settings.close_to_tray_asked,
             low_battery_notification_enabled: settings.low_battery_notification_enabled,
+            controller_connection_popup_enabled: settings.controller_connection_popup_enabled,
+            controller_low_battery_popup_enabled: settings.controller_low_battery_popup_enabled,
+            controller_notification_popup_duration_ms: normalize_popup_duration_ms(settings.controller_notification_popup_duration_ms),
             controller_notification_sound_enabled: settings.controller_notification_sound_enabled,
             controller_notification_sound_volumes: settings.controller_notification_sound_volumes.normalized(),
         }

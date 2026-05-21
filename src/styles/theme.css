@@ -112,9 +112,9 @@
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
+  --card: #171717;
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
+  --popover: #171717;
   --popover-foreground: oklch(0.985 0 0);
   --primary: #f5f5f5;
   --primary-foreground: #111111;
@@ -133,9 +133,9 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --app-surface: #0b0b0b;
+  --app-surface: #171717;
   --settings-surface: #101010;
-  --settings-card: #181818;
+  --settings-card: #171717;
   --settings-option-card: #202124;
   --app-heading: #f8fafc;
   --app-label: #a3a3a3;
@@ -143,14 +143,14 @@
   --color-text-head-100: var(--app-heading);
   --color-text-hint-60: var(--app-label);
   --color-background-card-6: rgb(255 255 255 / 8%);
-  --color-background-basic: #0b0b0b;
+  --color-background-basic: #171717;
   --app-state: rgb(255 255 255 / 4%);
   --app-state-border: rgb(255 255 255 / 10%);
   --app-error: #fb7185;
   --app-warning: #fbbf24;
   --app-warning-bg: rgb(251 191 36 / 10%);
   --app-warning-border: rgb(251 191 36 / 28%);
-  --device-card: #181818;
+  --device-card: #171717;
   --device-card-border: rgb(255 255 255 / 12%);
   --device-info: #202020;
   --device-info-border: rgb(255 255 255 / 10%);

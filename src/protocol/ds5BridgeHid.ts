@@ -247,6 +247,10 @@ export function tauriDeviceInfosToHidDevices(devices: TauriHidDeviceInfo[]): HID
   return devices.map((device) => new TauriHidDevice(device) as unknown as HIDDevice);
 }
 
+export function isAutoConnectCandidate(device: HIDDevice): boolean {
+  return Ds5BridgeHidClient.isSupportedDevice(device);
+}
+
 export function webHidAvailable(): boolean {
   return true;
 }

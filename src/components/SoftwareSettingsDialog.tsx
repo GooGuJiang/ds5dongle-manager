@@ -19,11 +19,17 @@ interface SoftwareSettingsDialogProps {
   open: boolean;
   closeToTray: boolean;
   lowBatteryNotificationEnabled: boolean;
+  controllerConnectionPopupEnabled: boolean;
+  controllerLowBatteryPopupEnabled: boolean;
+  controllerNotificationPopupDurationMs: number;
   controllerNotificationSoundEnabled: boolean;
   controllerNotificationSoundVolumes: ControllerNotificationSoundVolumes;
   onOpenChange: (open: boolean) => void;
   onCloseToTrayChange: (enabled: boolean) => void;
   onLowBatteryNotificationEnabledChange?: (enabled: boolean) => Promise<void>;
+  onControllerConnectionPopupEnabledChange?: (enabled: boolean) => Promise<void>;
+  onControllerLowBatteryPopupEnabledChange?: (enabled: boolean) => Promise<void>;
+  onControllerNotificationPopupDurationMsChange?: (durationMs: number) => Promise<void>;
   onControllerNotificationSoundEnabledChange?: (enabled: boolean) => Promise<void>;
   onControllerNotificationSoundVolumeChange?: (sound: ControllerNotificationSound, volume: number) => Promise<void>;
   onResetControllerNotificationSoundVolumes?: () => Promise<void>;
@@ -35,11 +41,17 @@ export function SoftwareSettingsDialog({
   open,
   closeToTray,
   lowBatteryNotificationEnabled,
+  controllerConnectionPopupEnabled,
+  controllerLowBatteryPopupEnabled,
+  controllerNotificationPopupDurationMs,
   controllerNotificationSoundEnabled,
   controllerNotificationSoundVolumes,
   onOpenChange,
   onCloseToTrayChange,
   onLowBatteryNotificationEnabledChange,
+  onControllerConnectionPopupEnabledChange,
+  onControllerLowBatteryPopupEnabledChange,
+  onControllerNotificationPopupDurationMsChange,
   onControllerNotificationSoundEnabledChange,
   onControllerNotificationSoundVolumeChange,
   onResetControllerNotificationSoundVolumes,
@@ -49,12 +61,19 @@ export function SoftwareSettingsDialog({
   const { t } = useTranslation();
   const [page, setPage] = useState<SettingsPage>("root");
   const [localVolumes, setLocalVolumes] = useState(controllerNotificationSoundVolumes);
+  const [localPopupDurationMs, setLocalPopupDurationMs] = useState(controllerNotificationPopupDurationMs);
   const volumeCommitTimersRef = useRef<Partial<Record<ControllerNotificationSound, number>>>({});
-  const notificationEnabled = lowBatteryNotificationEnabled || controllerNotificationSoundEnabled;
+  const popupDurationCommitTimerRef = useRef<number | null>(null);
+  const notificationEnabled = lowBatteryNotificationEnabled || controllerConnectionPopupEnabled || controllerLowBatteryPopupEnabled || controllerNotificationSoundEnabled;
+  const popupDurationSeconds = Math.round(localPopupDurationMs / 1000);
 
   useEffect(() => {
     setLocalVolumes(controllerNotificationSoundVolumes);
   }, [controllerNotificationSoundVolumes]);
+
+  useEffect(() => {
+    setLocalPopupDurationMs(controllerNotificationPopupDurationMs);
+  }, [controllerNotificationPopupDurationMs]);
 
   useEffect(() => {
     return () => {
@@ -63,6 +82,9 @@ export function SoftwareSettingsDialog({
           window.clearTimeout(timerId);
         }
       });
+      if (popupDurationCommitTimerRef.current !== null) {
+        window.clearTimeout(popupDurationCommitTimerRef.current);
+      }
     };
   }, []);
 
@@ -79,6 +101,20 @@ export function SoftwareSettingsDialog({
       volumeCommitTimersRef.current[sound] = undefined;
       void onControllerNotificationSoundVolumeChange?.(sound, volume);
     }, 120);
+  };
+
+  const updatePopupDuration = (seconds: number) => {
+    const durationMs = Math.max(2, Math.min(15, seconds)) * 1000;
+    setLocalPopupDurationMs(durationMs);
+
+    if (popupDurationCommitTimerRef.current !== null) {
+      window.clearTimeout(popupDurationCommitTimerRef.current);
+    }
+
+    popupDurationCommitTimerRef.current = window.setTimeout(() => {
+      popupDurationCommitTimerRef.current = null;
+      void onControllerNotificationPopupDurationMsChange?.(durationMs);
+    }, 160);
   };
 
   const soundControls = useMemo(
@@ -173,6 +209,47 @@ export function SoftwareSettingsDialog({
                     aria-label={t("softwareSettings.lowBatteryNotification")}
                   />
                 </div>
+              </div>
+              <div className="software-settings-option">
+                <div>
+                  <strong>{t("softwareSettings.controllerConnectionPopup")}</strong>
+                  <p>{t("softwareSettings.controllerConnectionPopupDescription")}</p>
+                </div>
+                <Switch
+                  checked={controllerConnectionPopupEnabled}
+                  onCheckedChange={(checked) => void onControllerConnectionPopupEnabledChange?.(checked)}
+                  aria-label={t("softwareSettings.controllerConnectionPopup")}
+                />
+              </div>
+              <div className="software-settings-option">
+                <div>
+                  <strong>{t("softwareSettings.controllerLowBatteryPopup")}</strong>
+                  <p>{t("softwareSettings.controllerLowBatteryPopupDescription")}</p>
+                </div>
+                <Switch
+                  checked={controllerLowBatteryPopupEnabled}
+                  onCheckedChange={(checked) => void onControllerLowBatteryPopupEnabledChange?.(checked)}
+                  aria-label={t("softwareSettings.controllerLowBatteryPopup")}
+                />
+              </div>
+              <div className="software-settings-option software-settings-option-column">
+                <div className="software-settings-option-head">
+                  <span>
+                    <strong>{t("softwareSettings.controllerPopupDuration")}</strong>
+                    <p>{t("softwareSettings.controllerPopupDurationDescription")}</p>
+                  </span>
+                  <span className="software-settings-duration-value">
+                    {t("softwareSettings.controllerPopupDurationValue", { seconds: popupDurationSeconds })}
+                  </span>
+                </div>
+                <Slider
+                  min={2}
+                  max={15}
+                  step={1}
+                  value={[popupDurationSeconds]}
+                  onValueChange={([value]) => updatePopupDuration(value)}
+                  aria-label={t("softwareSettings.controllerPopupDuration")}
+                />
               </div>
               <div className="software-settings-option software-settings-option-column">
                 <div className="software-settings-option-head">

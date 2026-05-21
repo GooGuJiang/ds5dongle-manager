@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import {
   ConfigBody,
   ConfigDecodeError,
@@ -17,7 +16,9 @@ import {
   NO_DEVICE_SELECTED_ERROR,
   TauriHidDeviceInfo,
   WEBHID_UNAVAILABLE_ERROR,
+  getControllerIconSrc,
   getDeviceLabel,
+  isAutoConnectCandidate,
   getDeviceKey,
   getDevicePortKey,
   startDeviceMonitor,
@@ -35,6 +36,7 @@ const BATTERY_LISTEN_TIMEOUT_MS = 300;
 const AUTHORIZED_DEVICE_INFO_REFRESH_INTERVAL_MS = 5 * 60_000;
 const SWITCH_RECONNECT_WINDOW_MS = 30_000;
 const LOW_BATTERY_THRESHOLD_PERCENT = 15;
+const AUTO_CONNECT_RETRY_COOLDOWN_MS = 10_000;
 
 export type ControllerNotificationSound = "connected" | "disconnected" | "lowBattery";
 
@@ -71,11 +73,17 @@ export interface UseDs5BridgeResult {
   isDefaultConfig: boolean;
   needsUsbReconnect: boolean;
   lowBatteryNotificationEnabled: boolean;
+  controllerConnectionPopupEnabled: boolean;
+  controllerLowBatteryPopupEnabled: boolean;
+  controllerNotificationPopupDurationMs: number;
   controllerNotificationSoundEnabled: boolean;
   controllerNotificationSoundVolumes: ControllerNotificationSoundVolumes;
   switchReadyToken: number;
   setDraftField: <Key extends keyof ConfigBody>(field: Key, value: ConfigBody[Key]) => void;
   setLowBatteryNotificationEnabled: (enabled: boolean) => Promise<void>;
+  setControllerConnectionPopupEnabled: (enabled: boolean) => Promise<void>;
+  setControllerLowBatteryPopupEnabled: (enabled: boolean) => Promise<void>;
+  setControllerNotificationPopupDurationMs: (durationMs: number) => Promise<void>;
   setControllerNotificationSoundEnabled: (enabled: boolean) => Promise<void>;
   setControllerNotificationSoundVolume: (sound: ControllerNotificationSound, volume: number) => Promise<void>;
   resetControllerNotificationSoundVolumes: () => Promise<void>;
@@ -104,6 +112,9 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   const [error, setError] = useState<string | null>(null);
   const [needsUsbReconnect, setNeedsUsbReconnect] = useState(false);
   const [lowBatteryNotificationEnabled, setLowBatteryNotificationEnabledState] = useState(true);
+  const [controllerConnectionPopupEnabled, setControllerConnectionPopupEnabledState] = useState(true);
+  const [controllerLowBatteryPopupEnabled, setControllerLowBatteryPopupEnabledState] = useState(true);
+  const [controllerNotificationPopupDurationMs, setControllerNotificationPopupDurationMsState] = useState(4_000);
   const [controllerNotificationSoundEnabled, setControllerNotificationSoundEnabledState] = useState(true);
   const [controllerNotificationSoundVolumes, setControllerNotificationSoundVolumes] = useState<ControllerNotificationSoundVolumes>(DEFAULT_CONTROLLER_NOTIFICATION_SOUND_VOLUMES);
   const [shouldReturnHome, setShouldReturnHome] = useState(false);
@@ -135,14 +146,20 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   const autoConnectDeviceKeyRef = useRef<string | null>(null);
   const reconnectingDevicePortKeyRef = useRef<string | null>(null);
   const reconnectingDeviceTimeoutRef = useRef<number | null>(null);
+  const autoConnectInFlightKeyRef = useRef<string | null>(null);
+  const failedAutoConnectAtRef = useRef<Record<string, number>>({});
   const authorizedDeviceInfoScanIdRef = useRef(0);
   const pendingChangedFieldsRef = useRef<Set<keyof ConfigBody>>(new Set());
   const windowVisibleRef = useRef(typeof document === "undefined" ? true : document.visibilityState === "visible");
   const lowBatteryNotificationEnabledRef = useRef(true);
+  const controllerConnectionPopupEnabledRef = useRef(true);
+  const controllerLowBatteryPopupEnabledRef = useRef(true);
+  const controllerNotificationPopupDurationMsRef = useRef(4_000);
   const lowBatteryNotifiedKeyRef = useRef<Set<string>>(new Set());
   const controllerNotificationSoundEnabledRef = useRef(true);
   const controllerNotificationSoundVolumesRef = useRef<ControllerNotificationSoundVolumes>(DEFAULT_CONTROLLER_NOTIFICATION_SOUND_VOLUMES);
   const suppressNextConnectSoundRef = useRef(false);
+  const lastTrayBatteriesSignatureRef = useRef("");
 
   const issues = useMemo(() => validateConfig(draft), [draft]);
   const isConnected = Boolean(client?.device.opened);
@@ -298,6 +315,32 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     await invoke("ds5_set_low_battery_notification_enabled", { enabled });
   }, []);
 
+  const setControllerConnectionPopupEnabled = useCallback(async (enabled: boolean) => {
+    controllerConnectionPopupEnabledRef.current = enabled;
+    setControllerConnectionPopupEnabledState(enabled);
+    await invoke("ds5_set_controller_connection_popup_enabled", { enabled });
+  }, []);
+
+  const setControllerLowBatteryPopupEnabled = useCallback(async (enabled: boolean) => {
+    controllerLowBatteryPopupEnabledRef.current = enabled;
+    setControllerLowBatteryPopupEnabledState(enabled);
+    await invoke("ds5_set_controller_low_battery_popup_enabled", { enabled });
+  }, []);
+
+  const setControllerNotificationPopupDurationMs = useCallback(async (durationMs: number) => {
+    const normalizedDurationMs = normalizePopupDurationMs(durationMs);
+    controllerNotificationPopupDurationMsRef.current = normalizedDurationMs;
+    setControllerNotificationPopupDurationMsState(normalizedDurationMs);
+
+    await invoke<number>("ds5_set_controller_notification_popup_duration_ms", { durationMs: normalizedDurationMs })
+      .then((nextDurationMs) => {
+        const normalizedNextDurationMs = normalizePopupDurationMs(nextDurationMs);
+        controllerNotificationPopupDurationMsRef.current = normalizedNextDurationMs;
+        setControllerNotificationPopupDurationMsState(normalizedNextDurationMs);
+      })
+      .catch(() => undefined);
+  }, []);
+
   const setControllerNotificationSoundEnabled = useCallback(async (enabled: boolean) => {
     controllerNotificationSoundEnabledRef.current = enabled;
     setControllerNotificationSoundEnabledState(enabled);
@@ -356,26 +399,54 @@ export function useDs5Bridge(): UseDs5BridgeResult {
 
     if (!lowBatteryNotifiedKeyRef.current.has(deviceKey)) {
       lowBatteryNotifiedKeyRef.current.add(deviceKey);
+      if (controllerLowBatteryPopupEnabledRef.current) {
+        void invoke("ds5_show_controller_notification", {
+          kind: "lowBattery",
+          deviceLabel: getDeviceLabel(device),
+          iconSrc: getControllerIconSrc(device),
+          batteryText: nextBatteryText,
+          batteryTexts: [nextBatteryText],
+          durationMs: controllerNotificationPopupDurationMsRef.current,
+        }).catch(() => undefined);
+      }
       void playControllerNotificationSound("lowBattery");
     }
   }, [playControllerNotificationSound]);
 
   const testLowBatteryNotification = useCallback(async () => {
     await Promise.all([
-      enqueueLowBatteryNotification(
-        t("notifications.lowBatteryTitle"),
-        t("notifications.lowBatteryBody", { device: t("notifications.testDevice"), battery: "15%" }),
-      ),
+      controllerLowBatteryPopupEnabledRef.current
+        ? invoke("ds5_show_controller_notification", {
+          kind: "lowBattery",
+          deviceLabel: t("notifications.testDevice"),
+          iconSrc: getControllerIconSrc(null),
+          batteryText: "15%",
+          batteryTexts: ["15%"],
+          durationMs: controllerNotificationPopupDurationMsRef.current,
+        }).catch(() => undefined)
+        : Promise.resolve(),
       playControllerNotificationSound("lowBattery"),
     ]);
   }, [playControllerNotificationSound, t]);
 
   const handleConnectedDeviceDisconnected = useCallback((expectedDisconnect = false) => {
+    const disconnectedClient = clientRef.current;
     if (!expectedDisconnect) {
       shouldReturnHomeRef.current = false;
       setShouldReturnHome(false);
-      setError(t("errors.disconnected"));
       void playControllerNotificationSound("disconnected");
+      if (disconnectedClient) {
+        if (controllerConnectionPopupEnabledRef.current) {
+          void invoke("ds5_show_controller_notification", {
+          kind: "disconnected",
+          deviceLabel: getDeviceLabel(disconnectedClient.device),
+          iconSrc: getControllerIconSrc(disconnectedClient.device),
+          batteryText: "--",
+          batteryTexts: [],
+          durationMs: controllerNotificationPopupDurationMsRef.current,
+        }).catch(() => undefined);
+        }
+      }
     }
 
     expectedUsbDisconnectRef.current = false;
@@ -433,6 +504,16 @@ export function useDs5Bridge(): UseDs5BridgeResult {
         setBatteryText(nextBatteryText);
         updateLowBatterySoundState(nextClient.device, nextBatteryText);
       }
+      if (!isSwitchReconnect && controllerConnectionPopupEnabledRef.current) {
+        void invoke("ds5_show_controller_notification", {
+          kind: "connected",
+          deviceLabel: getDeviceLabel(nextClient.device),
+          iconSrc: getControllerIconSrc(nextClient.device),
+          batteryText: nextBatteryText || "--",
+          batteryTexts: nextBatteryText ? [nextBatteryText] : [],
+          durationMs: controllerNotificationPopupDurationMsRef.current,
+        }).catch(() => undefined);
+      }
       await refreshPicoInfo(nextClient, setFirmwareVersion, setSignalStrength).catch(() => undefined);
       setSwitchReadyToken((token) => token + 1);
     },
@@ -440,17 +521,29 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   );
 
   const connectDeviceSilently = useCallback(async (device: HIDDevice) => {
+    const deviceKey = getDeviceKey(device);
+    if (autoConnectInFlightKeyRef.current === deviceKey) {
+      return;
+    }
+
+    autoConnectInFlightKeyRef.current = deviceKey;
     try {
       await attachClient(new Ds5BridgeHidClient(device));
+      delete failedAutoConnectAtRef.current[deviceKey];
     } catch (cause) {
-      if (autoConnectDeviceKeyRef.current === getDeviceKey(device)) {
-        autoConnectDeviceKeyRef.current = null;
+      failedAutoConnectAtRef.current[deviceKey] = Date.now();
+      if (autoConnectDeviceKeyRef.current !== deviceKey) {
+        autoConnectDeviceKeyRef.current = deviceKey;
       }
 
       if (!shouldReturnHomeRef.current && !reconnectingDevicePortKeyRef.current) {
         setError(errorMessage(cause, t));
       }
       setOperation(null);
+    } finally {
+      if (autoConnectInFlightKeyRef.current === deviceKey) {
+        autoConnectInFlightKeyRef.current = null;
+      }
     }
   }, [attachClient, t]);
 
@@ -705,6 +798,28 @@ export function useDs5Bridge(): UseDs5BridgeResult {
         setControllerNotificationSoundVolumes(normalizedVolumes);
       })
       .catch(() => undefined);
+
+    void invoke<boolean>("ds5_get_controller_connection_popup_enabled")
+      .then((enabled) => {
+        controllerConnectionPopupEnabledRef.current = enabled;
+        setControllerConnectionPopupEnabledState(enabled);
+      })
+      .catch(() => undefined);
+
+    void invoke<boolean>("ds5_get_controller_low_battery_popup_enabled")
+      .then((enabled) => {
+        controllerLowBatteryPopupEnabledRef.current = enabled;
+        setControllerLowBatteryPopupEnabledState(enabled);
+      })
+      .catch(() => undefined);
+
+    void invoke<number>("ds5_get_controller_notification_popup_duration_ms")
+      .then((durationMs) => {
+        const normalizedDurationMs = normalizePopupDurationMs(durationMs);
+        controllerNotificationPopupDurationMsRef.current = normalizedDurationMs;
+        setControllerNotificationPopupDurationMsState(normalizedDurationMs);
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -779,10 +894,10 @@ export function useDs5Bridge(): UseDs5BridgeResult {
   useEffect(() => {
     if (authorizedDevices.length === 0) {
       autoConnectDeviceKeyRef.current = null;
-      setAuthorizedDeviceBatteryText({});
-      setAuthorizedDeviceSerialNumber({});
-      setAuthorizedDeviceFirmwareVersion({});
-      setAuthorizedDeviceSignalStrength({});
+      setAuthorizedDeviceBatteryText((current) => replaceRecordIfChanged(current, {}));
+      setAuthorizedDeviceSerialNumber((current) => replaceRecordIfChanged(current, {}));
+      setAuthorizedDeviceFirmwareVersion((current) => replaceRecordIfChanged(current, {}));
+      setAuthorizedDeviceSignalStrength((current) => replaceRecordIfChanged(current, {}));
       return;
     }
 
@@ -814,14 +929,22 @@ export function useDs5Bridge(): UseDs5BridgeResult {
       return;
     }
 
-    const nextDevice = authorizedDevices.find(Ds5BridgeHidClient.isSupportedDevice);
+    const now = Date.now();
+    const nextDevice = authorizedDevices.find((device) => {
+      if (!isAutoConnectCandidate(device)) {
+        return false;
+      }
+
+      const failedAt = failedAutoConnectAtRef.current[getDeviceKey(device)] ?? 0;
+      return now - failedAt >= AUTO_CONNECT_RETRY_COOLDOWN_MS;
+    });
     if (!nextDevice) {
       autoConnectDeviceKeyRef.current = null;
       return;
     }
 
     const nextDeviceKey = getDeviceKey(nextDevice);
-    if (autoConnectDeviceKeyRef.current === nextDeviceKey) {
+    if (autoConnectDeviceKeyRef.current === nextDeviceKey || autoConnectInFlightKeyRef.current === nextDeviceKey) {
       return;
     }
 
@@ -867,6 +990,11 @@ export function useDs5Bridge(): UseDs5BridgeResult {
         batteryText: clientRef.current?.device === device ? batteryText : (authorizedDeviceBatteryText[deviceKey] ?? "--"),
       };
     });
+    const signature = JSON.stringify(batteries);
+    if (lastTrayBatteriesSignatureRef.current === signature) {
+      return;
+    }
+    lastTrayBatteriesSignatureRef.current = signature;
 
     void invoke("ds5_update_tray_batteries", { batteries }).catch(() => undefined);
   }, [authorizedDeviceBatteryText, authorizedDevices, batteryText, t]);
@@ -955,11 +1083,17 @@ export function useDs5Bridge(): UseDs5BridgeResult {
     isDefaultConfig,
     needsUsbReconnect,
     lowBatteryNotificationEnabled,
+    controllerConnectionPopupEnabled,
+    controllerLowBatteryPopupEnabled,
+    controllerNotificationPopupDurationMs,
     controllerNotificationSoundEnabled,
     controllerNotificationSoundVolumes,
     switchReadyToken,
     setDraftField,
     setLowBatteryNotificationEnabled,
+    setControllerConnectionPopupEnabled,
+    setControllerLowBatteryPopupEnabled,
+    setControllerNotificationPopupDurationMs,
     setControllerNotificationSoundEnabled,
     setControllerNotificationSoundVolume,
     resetControllerNotificationSoundVolumes,
@@ -990,6 +1124,10 @@ function normalizeNotificationVolume(volume: number): number {
   return Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : 0;
 }
 
+function normalizePopupDurationMs(durationMs: number): number {
+  return Number.isFinite(durationMs) ? Math.max(2_000, Math.min(15_000, Math.round(durationMs))) : 4_000;
+}
+
 function normalizeNotificationVolumes(volumes: Partial<ControllerNotificationSoundVolumes> | null | undefined): ControllerNotificationSoundVolumes {
   return {
     connected: normalizeNotificationVolume(volumes?.connected ?? DEFAULT_CONTROLLER_NOTIFICATION_SOUND_VOLUMES.connected),
@@ -1005,17 +1143,6 @@ function parseBatteryPercent(batteryText: string): number | null {
   }
 
   return Math.max(0, Math.min(100, Number(match[1])));
-}
-
-async function enqueueLowBatteryNotification(title: string, body: string): Promise<void> {
-  try {
-    const granted = (await isPermissionGranted()) || (await requestPermission()) === "granted";
-    if (granted) {
-      sendNotification({ title, body });
-    }
-  } catch {
-    // Notifications are best-effort only.
-  }
 }
 
 async function refreshPicoInfo(

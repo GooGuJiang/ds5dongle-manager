@@ -30,6 +30,9 @@ interface SoftwareSettingsPayload {
   closeToTray: boolean;
   closeToTrayAsked: boolean;
   lowBatteryNotificationEnabled: boolean;
+  controllerConnectionPopupEnabled: boolean;
+  controllerLowBatteryPopupEnabled: boolean;
+  controllerNotificationPopupDurationMs: number;
   controllerNotificationSoundEnabled: boolean;
   controllerNotificationSoundVolumes: ControllerNotificationSoundVolumes;
 }
@@ -53,6 +56,12 @@ interface AppHeaderProps {
   onResetToDefaults?: () => void;
   lowBatteryNotificationEnabled?: boolean;
   onLowBatteryNotificationEnabledChange?: (enabled: boolean) => Promise<void>;
+  controllerConnectionPopupEnabled?: boolean;
+  controllerLowBatteryPopupEnabled?: boolean;
+  controllerNotificationPopupDurationMs?: number;
+  onControllerConnectionPopupEnabledChange?: (enabled: boolean) => Promise<void>;
+  onControllerLowBatteryPopupEnabledChange?: (enabled: boolean) => Promise<void>;
+  onControllerNotificationPopupDurationMsChange?: (durationMs: number) => Promise<void>;
   controllerNotificationSoundEnabled?: boolean;
   controllerNotificationSoundVolumes: ControllerNotificationSoundVolumes;
   onControllerNotificationSoundEnabledChange?: (enabled: boolean) => Promise<void>;
@@ -81,6 +90,12 @@ export function AppHeader({
   onResetToDefaults,
   lowBatteryNotificationEnabled = true,
   onLowBatteryNotificationEnabledChange,
+  controllerConnectionPopupEnabled = true,
+  controllerLowBatteryPopupEnabled = true,
+  controllerNotificationPopupDurationMs = 4_000,
+  onControllerConnectionPopupEnabledChange,
+  onControllerLowBatteryPopupEnabledChange,
+  onControllerNotificationPopupDurationMsChange,
   controllerNotificationSoundEnabled = true,
   controllerNotificationSoundVolumes,
   onControllerNotificationSoundEnabledChange,
@@ -406,11 +421,17 @@ export function AppHeader({
         open={softwareSettingsOpen}
         closeToTray={closeToTray}
         lowBatteryNotificationEnabled={lowBatteryNotificationEnabled}
+        controllerConnectionPopupEnabled={controllerConnectionPopupEnabled}
+        controllerLowBatteryPopupEnabled={controllerLowBatteryPopupEnabled}
+        controllerNotificationPopupDurationMs={controllerNotificationPopupDurationMs}
         controllerNotificationSoundEnabled={controllerNotificationSoundEnabled}
         controllerNotificationSoundVolumes={controllerNotificationSoundVolumes}
         onOpenChange={setSoftwareSettingsOpen}
         onCloseToTrayChange={updateCloseToTray}
         onLowBatteryNotificationEnabledChange={onLowBatteryNotificationEnabledChange}
+        onControllerConnectionPopupEnabledChange={onControllerConnectionPopupEnabledChange}
+        onControllerLowBatteryPopupEnabledChange={onControllerLowBatteryPopupEnabledChange}
+        onControllerNotificationPopupDurationMsChange={onControllerNotificationPopupDurationMsChange}
         onControllerNotificationSoundEnabledChange={onControllerNotificationSoundEnabledChange}
         onControllerNotificationSoundVolumeChange={onControllerNotificationSoundVolumeChange}
         onResetControllerNotificationSoundVolumes={onResetControllerNotificationSoundVolumes}
