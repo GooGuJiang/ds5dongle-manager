@@ -85,6 +85,7 @@ export const zh = {
     releaseNotes: "更新说明",
     highlights: "更新亮点",
     assets: "{{os}} 安装包下载",
+    noAssets: "当前版本暂未提供适用于此平台的安装包，请稍后查看发布页。",
     later: "稍后再说",
     openRelease: "打开发布页",
     os: {

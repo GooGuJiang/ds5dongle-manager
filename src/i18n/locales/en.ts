@@ -85,6 +85,7 @@ export const en = {
     releaseNotes: "Release notes",
     highlights: "Highlights",
     assets: "{{os}} installer downloads",
+    noAssets: "This release does not currently provide an installer for this platform. Please check the release page later.",
     later: "Later",
     openRelease: "Open release page",
     os: {

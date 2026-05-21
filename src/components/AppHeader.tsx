@@ -26,6 +26,8 @@ const headerFadeTransition = {
   ease: "easeOut" as const,
 };
 
+const CLOSE_BUTTON_SETTLE_MS = 120;
+
 interface SoftwareSettingsPayload {
   closeToTray: boolean;
   closeToTrayAsked: boolean;
@@ -121,6 +123,7 @@ export function AppHeader({
   const closeToTrayRef = useRef(false);
   const closeBehaviorDialogOpenRef = useRef(false);
   const forceCloseRef = useRef(false);
+  const closeRequestTimerRef = useRef<number | null>(null);
   const showControlSpacer = showBackButton && !showControlBar;
 
   useEffect(() => {
@@ -167,6 +170,12 @@ export function AppHeader({
   useEffect(() => {
     closeBehaviorDialogOpenRef.current = closeBehaviorDialogOpen;
   }, [closeBehaviorDialogOpen]);
+
+  useEffect(() => () => {
+    if (closeRequestTimerRef.current !== null) {
+      window.clearTimeout(closeRequestTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     const unlistenPromise = appWindow.onCloseRequested((event) => {
@@ -226,17 +235,26 @@ export function AppHeader({
   };
 
   const requestWindowClose = () => {
+    if (closeRequestTimerRef.current !== null) {
+      window.clearTimeout(closeRequestTimerRef.current);
+      closeRequestTimerRef.current = null;
+    }
+
     if (!closeToTrayAskedRef.current) {
       setCloseBehaviorDialogOpen(true);
       return;
     }
 
-    if (closeToTrayRef.current) {
-      void appWindow.hide();
-      return;
-    }
+    closeRequestTimerRef.current = window.setTimeout(() => {
+      closeRequestTimerRef.current = null;
 
-    void appWindow.close();
+      if (closeToTrayRef.current) {
+        void appWindow.hide();
+        return;
+      }
+
+      void appWindow.close();
+    }, CLOSE_BUTTON_SETTLE_MS);
   };
 
   return (

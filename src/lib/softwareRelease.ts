@@ -91,6 +91,10 @@ export function selectRecommendedSoftwareAssets(
   assets: SoftwareReleaseAsset[],
   systemInfo: SoftwareSystemInfo | null,
 ): RecommendedSoftwareAsset[] {
+  if (!Array.isArray(assets) || assets.length === 0) {
+    return [];
+  }
+
   const scored = assets
     .map((asset) => scoreSoftwareAsset(asset, systemInfo))
     .filter((asset): asset is RecommendedSoftwareAsset => asset.priority > 0)
@@ -106,7 +110,10 @@ function softwareUpdateUrl(currentVersion: string): string {
 }
 
 async function fetchSoftwareUpdate(currentVersion: string, signal?: AbortSignal): Promise<SoftwareUpdateCheckResult> {
-  const result = await fetchJson<SoftwareUpdateCheckResult>(softwareUpdateUrl(currentVersion), mergeWithTimeout(signal));
+  const result = normalizeSoftwareUpdateResult(
+    await fetchJson<Partial<SoftwareUpdateCheckResult>>(softwareUpdateUrl(currentVersion), mergeWithTimeout(signal)),
+    currentVersion,
+  );
   writeCachedSoftwareUpdate(currentVersion, result);
   return result;
 }
@@ -137,11 +144,15 @@ async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 }
 
 function scoreSoftwareAsset(asset: SoftwareReleaseAsset, systemInfo: SoftwareSystemInfo | null): RecommendedSoftwareAsset {
-  const name = asset.name.toLowerCase();
+  const name = String(asset.name || "").toLowerCase();
   const os = systemInfo?.os ?? inferBrowserSystemInfo().os;
   const arch = systemInfo?.arch ?? inferBrowserSystemInfo().arch;
   let priority = 0;
   let kind = "package";
+
+  if (!name || !asset.downloadUrl) {
+    return { ...asset, name: asset.name || UNKNOWN_VERSION, downloadUrl: asset.downloadUrl || "", priority, kind };
+  }
 
   if (os === "windows" && /\.(msi|exe)$/.test(name)) {
     priority = name.endsWith(".msi") ? 90 : 80;
@@ -196,6 +207,80 @@ function normalizeSoftwareVersion(version: string): string {
   }
 
   return normalized;
+}
+
+function normalizeSoftwareUpdateResult(result: Partial<SoftwareUpdateCheckResult>, currentVersion: string): SoftwareUpdateCheckResult {
+  if (!result.latestRelease?.tagName) {
+    throw new Error("Software update check failed: invalid latest release payload");
+  }
+
+  const latestRelease = normalizeSoftwareReleaseInfo(result.latestRelease);
+  const normalizedCurrentVersion = normalizeSoftwareVersion(result.currentVersion || currentVersion);
+  const updateAvailable = compareSoftwareVersions(latestRelease.tagName, normalizedCurrentVersion) > 0 && result.updateAvailable === true;
+
+  return {
+    updateAvailable,
+    currentVersion: normalizedCurrentVersion,
+    currentRelease: result.currentRelease ? normalizeSoftwareReleaseInfo(result.currentRelease) : null,
+    latestRelease,
+  };
+}
+
+function normalizeSoftwareReleaseInfo(release: Partial<SoftwareReleaseInfo>): SoftwareReleaseInfo {
+  return {
+    tagName: String(release.tagName || UNKNOWN_VERSION),
+    name: String(release.name || release.tagName || UNKNOWN_VERSION),
+    body: String(release.body || ""),
+    htmlUrl: String(release.htmlUrl || APP_METADATA.githubUrl),
+    publishedAt: typeof release.publishedAt === "string" ? release.publishedAt : null,
+    commitSha: typeof release.commitSha === "string" ? release.commitSha : null,
+    assets: Array.isArray(release.assets)
+      ? release.assets
+        .filter((asset): asset is SoftwareReleaseAsset => Boolean(asset?.name && asset?.downloadUrl))
+        .map((asset) => ({ name: String(asset.name), downloadUrl: String(asset.downloadUrl) }))
+      : [],
+    localizedNotes: normalizeSoftwareLocalizedNotes(release.localizedNotes),
+  };
+}
+
+function normalizeSoftwareLocalizedNotes(notes: SoftwareLocalizedNotes | undefined): SoftwareLocalizedNotes | undefined {
+  if (!notes?.zh_CN && !notes?.en_US) {
+    return undefined;
+  }
+
+  return {
+    zh_CN: normalizeSoftwareLocalizedBlock(notes.zh_CN),
+    en_US: normalizeSoftwareLocalizedBlock(notes.en_US),
+    aiGenerated: notes.aiGenerated,
+  };
+}
+
+function normalizeSoftwareLocalizedBlock(block: SoftwareLocalizedBlock | undefined): SoftwareLocalizedBlock {
+  return {
+    title: String(block?.title || ""),
+    summary: String(block?.summary || ""),
+    highlights: Array.isArray(block?.highlights) ? block.highlights.map(String).filter(Boolean) : [],
+    upgradeNotice: String(block?.upgradeNotice || ""),
+  };
+}
+
+function compareSoftwareVersions(left: string, right: string): number {
+  const leftParts = parseSoftwareVersionParts(left);
+  const rightParts = parseSoftwareVersionParts(right);
+
+  for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+
+  return 0;
+}
+
+function parseSoftwareVersionParts(version: string): number[] {
+  const match = version.trim().match(/^v?(\d+(?:\.\d+){0,3})/i);
+  return match ? match[1].split(".").map((part) => Number(part) || 0) : [0];
 }
 
 function cacheKey(currentVersion: string): string {

@@ -103,6 +103,10 @@ export function SoftwareUpdateDialog({ open, result, systemInfo, onOpenChange }:
               </div>
             </section>
           )}
+
+          {recommendedAssets.length === 0 && (
+            <p className="software-update-notice">{t("softwareUpdate.noAssets")}</p>
+          )}
         </div>
 
         <DialogFooter>
