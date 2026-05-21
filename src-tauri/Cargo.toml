@@ -1,6 +1,6 @@
 [package]
 name = "ds5dongle-manager"
-version = "0.1.8"
+version = "0.1.9"
 description = "A desktop manager for DS5Dongle, providing a modern UI to configure and manage Pico2W DualSense bridge devices."
 authors = ["you"]
 edition = "2021"
