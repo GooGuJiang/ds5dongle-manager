@@ -16,10 +16,13 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri::path::BaseDirectory;
+use tauri_plugin_autostart::ManagerExt;
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 struct SoftwareSettings {
+    autostart_enabled: bool,
+    start_minimized: bool,
     close_to_tray: bool,
     close_to_tray_asked: bool,
     low_battery_notification_enabled: bool,
@@ -33,6 +36,8 @@ struct SoftwareSettings {
 impl Default for SoftwareSettings {
     fn default() -> Self {
         Self {
+            autostart_enabled: false,
+            start_minimized: false,
             close_to_tray: false,
             close_to_tray_asked: false,
             low_battery_notification_enabled: true,
@@ -84,6 +89,8 @@ impl ControllerNotificationSoundVolumes {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SoftwareSettingsDto {
+    pub autostart_enabled: bool,
+    pub start_minimized: bool,
     pub close_to_tray: bool,
     pub close_to_tray_asked: bool,
     pub low_battery_notification_enabled: bool,
@@ -196,6 +203,29 @@ pub fn ds5_get_tray_batteries(state: State<'_, TrayState>) -> Vec<String> {
 #[tauri::command]
 pub fn ds5_quit_app(app: AppHandle) {
     app.exit(0);
+}
+
+#[tauri::command]
+pub async fn ds5_set_autostart_enabled(app: AppHandle, enabled: bool, start_minimized: bool) -> Result<SoftwareSettingsDto, String> {
+    let autostart_manager = app.autolaunch();
+
+    if enabled {
+        autostart_manager.enable().map_err(|error| error.to_string())?;
+    } else {
+        autostart_manager.disable().map_err(|error| error.to_string())?;
+    }
+
+    let mut settings = load_software_settings_async(app.clone()).await?;
+    settings.autostart_enabled = autostart_manager.is_enabled().map_err(|error| error.to_string())?;
+    settings.start_minimized = if settings.autostart_enabled { start_minimized } else { false };
+    save_software_settings_async(app.clone(), settings.clone()).await?;
+    emit_software_settings_changed(&app, settings.clone());
+    Ok(settings.into())
+}
+
+#[tauri::command]
+pub async fn ds5_get_autostart_enabled(app: AppHandle) -> Result<bool, String> {
+    app.autolaunch().is_enabled().map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -676,6 +706,10 @@ fn load_software_settings(app: &AppHandle) -> Result<SoftwareSettings, String> {
     load_software_settings_from_path(software_settings_path(app)?)
 }
 
+pub fn load_start_minimized_setting(app: &AppHandle) -> Result<bool, String> {
+    Ok(load_software_settings(app)?.start_minimized)
+}
+
 fn load_software_settings_from_path(path: PathBuf) -> Result<SoftwareSettings, String> {
     if !path.exists() {
         return Ok(SoftwareSettings::default());
@@ -713,13 +747,15 @@ pub fn sync_close_to_tray_state(app: &AppHandle, state: &State<'_, TrayState>) -
 }
 
 fn sync_software_settings_state(app: &AppHandle, state: &State<'_, TrayState>) -> Result<SoftwareSettings, String> {
-    let settings = load_software_settings(app)?;
+    let mut settings = load_software_settings(app)?;
+    settings.autostart_enabled = app.autolaunch().is_enabled().unwrap_or(settings.autostart_enabled);
     update_close_to_tray_state(state, settings.close_to_tray, settings.close_to_tray_asked)?;
     Ok(settings)
 }
 
 async fn sync_software_settings_state_async(app: AppHandle, state: &State<'_, TrayState>) -> Result<SoftwareSettings, String> {
-    let settings = load_software_settings_async(app).await?;
+    let mut settings = load_software_settings_async(app.clone()).await?;
+    settings.autostart_enabled = app.autolaunch().is_enabled().unwrap_or(settings.autostart_enabled);
     update_close_to_tray_state(state, settings.close_to_tray, settings.close_to_tray_asked)?;
     Ok(settings)
 }
@@ -737,6 +773,8 @@ fn emit_software_settings_changed(app: &AppHandle, settings: SoftwareSettings) {
 impl From<SoftwareSettings> for SoftwareSettingsDto {
     fn from(settings: SoftwareSettings) -> Self {
         Self {
+            autostart_enabled: settings.autostart_enabled,
+            start_minimized: settings.start_minimized,
             close_to_tray: settings.close_to_tray,
             close_to_tray_asked: settings.close_to_tray_asked,
             low_battery_notification_enabled: settings.low_battery_notification_enabled,

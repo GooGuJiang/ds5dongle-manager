@@ -170,6 +170,21 @@
 .software-settings-dialog {
   app-region: no-drag;
   -webkit-app-region: no-drag;
+  overflow: hidden;
+  align-content: start;
+  transition: height 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: height;
+}
+
+.software-settings-page-viewport {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.software-settings-page {
+  display: grid;
+  gap: 16px;
+  will-change: transform, opacity;
 }
 
 .software-settings-page-stack {

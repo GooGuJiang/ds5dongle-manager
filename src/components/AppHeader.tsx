@@ -29,6 +29,8 @@ const headerFadeTransition = {
 const CLOSE_BUTTON_SETTLE_MS = 120;
 
 interface SoftwareSettingsPayload {
+  autostartEnabled: boolean;
+  startMinimized: boolean;
   closeToTray: boolean;
   closeToTrayAsked: boolean;
   lowBatteryNotificationEnabled: boolean;
@@ -116,6 +118,8 @@ export function AppHeader({
   const [displayNeedsUsbReconnect, setDisplayNeedsUsbReconnect] = useState(needsUsbReconnect);
   const [displayShowDeviceActions, setDisplayShowDeviceActions] = useState(showDeviceActions);
   const [softwareSettingsOpen, setSoftwareSettingsOpen] = useState(false);
+  const [autostartEnabled, setAutostartEnabled] = useState(false);
+  const [startMinimized, setStartMinimized] = useState(false);
   const [closeToTray, setCloseToTray] = useState(false);
   const [closeToTrayAsked, setCloseToTrayAsked] = useState(true);
   const [closeBehaviorDialogOpen, setCloseBehaviorDialogOpen] = useState(false);
@@ -146,6 +150,8 @@ export function AppHeader({
     void invoke<SoftwareSettingsPayload>("ds5_get_software_settings")
       .then((settings) => {
         if (!disposed) {
+          setAutostartEnabled(settings.autostartEnabled);
+          setStartMinimized(settings.startMinimized);
           setCloseToTray(settings.closeToTray);
           setCloseToTrayAsked(settings.closeToTrayAsked);
           closeToTrayRef.current = settings.closeToTray;
@@ -155,6 +161,8 @@ export function AppHeader({
       .catch(() => undefined);
 
     const unlistenPromise = listen<SoftwareSettingsPayload>("ds5-software-settings-changed", (event) => {
+      setAutostartEnabled(event.payload.autostartEnabled);
+      setStartMinimized(event.payload.startMinimized);
       setCloseToTray(event.payload.closeToTray);
       setCloseToTrayAsked(event.payload.closeToTrayAsked);
       closeToTrayRef.current = event.payload.closeToTray;
@@ -206,6 +214,28 @@ export function AppHeader({
     setCloseToTray(checked);
     closeToTrayRef.current = checked;
     void invoke("ds5_set_close_to_tray", { closeToTray: checked }).catch(() => setCloseToTray(!checked));
+  };
+
+  const updateAutostart = (enabled: boolean, minimized: boolean) => {
+    const previousAutostart = autostartEnabled;
+    const previousStartMinimized = startMinimized;
+    const nextStartMinimized = enabled ? minimized : false;
+
+    setAutostartEnabled(enabled);
+    setStartMinimized(nextStartMinimized);
+
+    void invoke<SoftwareSettingsPayload>("ds5_set_autostart_enabled", {
+      enabled,
+      startMinimized: nextStartMinimized,
+    })
+      .then((settings) => {
+        setAutostartEnabled(settings.autostartEnabled);
+        setStartMinimized(settings.startMinimized);
+      })
+      .catch(() => {
+        setAutostartEnabled(previousAutostart);
+        setStartMinimized(previousStartMinimized);
+      });
   };
 
   const chooseCloseBehavior = async (useTray: boolean) => {
@@ -437,6 +467,8 @@ export function AppHeader({
       <Tooltip id="header-device-actions-tooltip" place="bottom" positionStrategy="fixed" portalRoot={tooltipPortalRoot} />
       <SoftwareSettingsDialog
         open={softwareSettingsOpen}
+        autostartEnabled={autostartEnabled}
+        startMinimized={startMinimized}
         closeToTray={closeToTray}
         lowBatteryNotificationEnabled={lowBatteryNotificationEnabled}
         controllerConnectionPopupEnabled={controllerConnectionPopupEnabled}
@@ -445,6 +477,7 @@ export function AppHeader({
         controllerNotificationSoundEnabled={controllerNotificationSoundEnabled}
         controllerNotificationSoundVolumes={controllerNotificationSoundVolumes}
         onOpenChange={setSoftwareSettingsOpen}
+        onAutostartChange={updateAutostart}
         onCloseToTrayChange={updateCloseToTray}
         onLowBatteryNotificationEnabledChange={onLowBatteryNotificationEnabledChange}
         onControllerConnectionPopupEnabledChange={onControllerConnectionPopupEnabledChange}

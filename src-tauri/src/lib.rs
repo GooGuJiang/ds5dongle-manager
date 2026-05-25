@@ -11,7 +11,7 @@ use app_config::{
 use commands::{
     ds5_get_software_settings,
     ds5_get_system_info, ds5_list_devices, ds5_read_feature_report, ds5_read_input_report, ds5_send_feature_report,
-    ds5_get_close_to_tray, ds5_set_close_to_tray, ds5_start_device_monitor,
+    ds5_get_autostart_enabled, ds5_get_close_to_tray, ds5_set_autostart_enabled, ds5_set_close_to_tray, ds5_start_device_monitor,
     ds5_get_tray_batteries, ds5_hide_controller_notification, ds5_hide_tray_popup, ds5_open_main_window, ds5_quit_app,
     ds5_get_controller_notification_sound_enabled, ds5_get_controller_notification_sound_volumes,
     ds5_get_controller_connection_popup_enabled, ds5_get_controller_low_battery_popup_enabled,
@@ -56,10 +56,17 @@ pub fn run() {
             running: Arc::new(AtomicBool::new(false)),
         })
         .manage(build_tray_state())
+        .plugin(tauri_plugin_autostart::Builder::new().app_name("DS5 Dongle Manager").build())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             if let Err(error) = commands::sync_close_to_tray_state(&app.handle(), &app.state::<TrayState>()) {
                 eprintln!("failed to load software settings: {error}");
+            }
+
+            if should_start_minimized(app.handle()) {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
             }
 
             let tray_popup_builder = WebviewWindowBuilder::new(app, TRAY_POPUP_LABEL, WebviewUrl::App("/?tray=1".into()))
@@ -171,6 +178,8 @@ pub fn run() {
             ds5_update_tray_batteries,
             ds5_update_tray_labels,
             ds5_get_software_settings,
+            ds5_set_autostart_enabled,
+            ds5_get_autostart_enabled,
             ds5_set_close_to_tray,
             ds5_get_close_to_tray,
             ds5_set_low_battery_notification_enabled,
@@ -211,6 +220,11 @@ fn build_tray_state() -> TrayState {
         battery_item: std::sync::Mutex::new(None),
         quit_item: std::sync::Mutex::new(None),
     }
+}
+
+fn should_start_minimized(app: &tauri::AppHandle) -> bool {
+    std::env::args().any(|argument| argument == "--minimized" || argument == "--hidden")
+        || commands::load_start_minimized_setting(app).unwrap_or(false)
 }
 
 fn format_tray_battery_text(labels: &TrayLabels, battery_values: &[String]) -> String {

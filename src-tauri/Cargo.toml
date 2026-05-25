@@ -1,6 +1,6 @@
 [package]
 name = "ds5dongle-manager"
-version = "0.1.9"
+version = "0.2.0"
 description = "A desktop manager for DS5Dongle, providing a modern UI to configure and manage Pico2W DualSense bridge devices."
 authors = ["you"]
 edition = "2021"
@@ -19,6 +19,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png", "image-ico"] }
+tauri-plugin-autostart = "2.5.1"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }

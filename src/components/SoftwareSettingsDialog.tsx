@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Bell, ChevronLeft, ChevronRight, Volume2 } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Bell, ChevronLeft, ChevronRight, Power, Volume2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { AnimatePresence, motion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 
-type SettingsPage = "root" | "notifications";
+type SettingsPage = "root" | "startup" | "notifications";
 type ControllerNotificationSound = "connected" | "disconnected" | "lowBattery";
 
 export interface ControllerNotificationSoundVolumes {
@@ -17,6 +18,8 @@ export interface ControllerNotificationSoundVolumes {
 
 interface SoftwareSettingsDialogProps {
   open: boolean;
+  autostartEnabled: boolean;
+  startMinimized: boolean;
   closeToTray: boolean;
   lowBatteryNotificationEnabled: boolean;
   controllerConnectionPopupEnabled: boolean;
@@ -25,6 +28,7 @@ interface SoftwareSettingsDialogProps {
   controllerNotificationSoundEnabled: boolean;
   controllerNotificationSoundVolumes: ControllerNotificationSoundVolumes;
   onOpenChange: (open: boolean) => void;
+  onAutostartChange: (enabled: boolean, startMinimized: boolean) => void;
   onCloseToTrayChange: (enabled: boolean) => void;
   onLowBatteryNotificationEnabledChange?: (enabled: boolean) => Promise<void>;
   onControllerConnectionPopupEnabledChange?: (enabled: boolean) => Promise<void>;
@@ -39,6 +43,8 @@ interface SoftwareSettingsDialogProps {
 
 export function SoftwareSettingsDialog({
   open,
+  autostartEnabled,
+  startMinimized,
   closeToTray,
   lowBatteryNotificationEnabled,
   controllerConnectionPopupEnabled,
@@ -47,6 +53,7 @@ export function SoftwareSettingsDialog({
   controllerNotificationSoundEnabled,
   controllerNotificationSoundVolumes,
   onOpenChange,
+  onAutostartChange,
   onCloseToTrayChange,
   onLowBatteryNotificationEnabledChange,
   onControllerConnectionPopupEnabledChange,
@@ -62,9 +69,12 @@ export function SoftwareSettingsDialog({
   const [page, setPage] = useState<SettingsPage>("root");
   const [localVolumes, setLocalVolumes] = useState(controllerNotificationSoundVolumes);
   const [localPopupDurationMs, setLocalPopupDurationMs] = useState(controllerNotificationPopupDurationMs);
+  const [dialogHeight, setDialogHeight] = useState<number | "auto">("auto");
+  const pageViewportRef = useRef<HTMLDivElement | null>(null);
   const volumeCommitTimersRef = useRef<Partial<Record<ControllerNotificationSound, number>>>({});
   const popupDurationCommitTimerRef = useRef<number | null>(null);
   const notificationEnabled = lowBatteryNotificationEnabled || controllerConnectionPopupEnabled || controllerLowBatteryPopupEnabled || controllerNotificationSoundEnabled;
+  const startupEnabled = autostartEnabled || startMinimized;
   const popupDurationSeconds = Math.round(localPopupDurationMs / 1000);
 
   useEffect(() => {
@@ -74,6 +84,41 @@ export function SoftwareSettingsDialog({
   useEffect(() => {
     setLocalPopupDurationMs(controllerNotificationPopupDurationMs);
   }, [controllerNotificationPopupDurationMs]);
+
+  useEffect(() => {
+    if (open) {
+      setPage("root");
+      setDialogHeight("auto");
+    }
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setDialogHeight("auto");
+      return;
+    }
+
+    const viewport = pageViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    const syncDialogHeight = () => {
+      const contentHeight = viewport.scrollHeight;
+      const nextHeight = contentHeight + SOFTWARE_SETTINGS_DIALOG_VERTICAL_PADDING;
+      setDialogHeight((currentHeight) => (typeof currentHeight === "number" && Math.abs(currentHeight - nextHeight) < 1 ? currentHeight : nextHeight));
+    };
+
+    syncDialogHeight();
+    const animationFrameId = window.requestAnimationFrame(syncDialogHeight);
+    const resizeObserver = new ResizeObserver(syncDialogHeight);
+    resizeObserver.observe(viewport);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId);
+      resizeObserver.disconnect();
+    };
+  }, [open, page, localPopupDurationMs, localVolumes, controllerNotificationSoundEnabled, autostartEnabled, startMinimized]);
 
   useEffect(() => {
     return () => {
@@ -141,15 +186,31 @@ export function SoftwareSettingsDialog({
   const handleOpenChange = (nextOpen: boolean) => {
     onOpenChange(nextOpen);
     if (!nextOpen) {
-      window.setTimeout(() => setPage("root"), 180);
+      window.setTimeout(() => {
+        setPage("root");
+      }, 180);
     }
+  };
+
+  const navigateToPage = (nextPage: SettingsPage) => {
+    setPage(nextPage);
   };
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="software-settings-dialog" data-no-drag>
-        {page === "root" ? (
-          <>
+      <DialogContent className="software-settings-dialog" data-no-drag style={{ height: dialogHeight }}>
+        <div ref={pageViewportRef} className="software-settings-page-viewport">
+          <AnimatePresence mode="wait" initial={false}>
+            {page === "root" ? (
+              <motion.div
+                key="root"
+                className="software-settings-page"
+                variants={softwareSettingsPageVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={softwareSettingsPageTransition}
+              >
             <DialogHeader>
               <DialogTitle>{t("softwareSettings.title")}</DialogTitle>
               <DialogDescription>{t("softwareSettings.description")}</DialogDescription>
@@ -162,7 +223,17 @@ export function SoftwareSettingsDialog({
                 </div>
                 <Switch checked={closeToTray} onCheckedChange={onCloseToTrayChange} aria-label={t("softwareSettings.closeToTray")} />
               </div>
-              <button type="button" className="software-settings-entry" onClick={() => setPage("notifications")}>
+              <button type="button" className="software-settings-entry" onClick={() => navigateToPage("startup")}>
+                <span className="software-settings-entry-icon" aria-hidden="true">
+                  <Power size={18} />
+                </span>
+                <span className="software-settings-entry-copy">
+                  <strong>{t("softwareSettings.startupSettings")}</strong>
+                  <small>{startupEnabled ? t("softwareSettings.startupSettingsEnabled") : t("softwareSettings.startupSettingsDisabled")}</small>
+                </span>
+                <ChevronRight size={18} aria-hidden="true" />
+              </button>
+              <button type="button" className="software-settings-entry" onClick={() => navigateToPage("notifications")}>
                 <span className="software-settings-entry-icon" aria-hidden="true">
                   <Bell size={18} />
                 </span>
@@ -173,11 +244,61 @@ export function SoftwareSettingsDialog({
                 <ChevronRight size={18} aria-hidden="true" />
               </button>
             </div>
-          </>
-        ) : (
-          <>
+              </motion.div>
+        ) : page === "startup" ? (
+              <motion.div
+                key="startup"
+                className="software-settings-page"
+                variants={softwareSettingsPageVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={softwareSettingsPageTransition}
+              >
             <DialogHeader className="software-settings-subpage-header">
-              <Button type="button" variant="ghost" size="icon-sm" className="software-settings-back-button" onClick={() => setPage("root")}>
+              <Button type="button" variant="ghost" size="icon-sm" className="software-settings-back-button" onClick={() => navigateToPage("root")}>
+                <ChevronLeft size={18} />
+                <span className="sr-only">{t("softwareSettings.back")}</span>
+              </Button>
+              <div>
+                <DialogTitle>{t("softwareSettings.startupSettings")}</DialogTitle>
+                <DialogDescription>{t("softwareSettings.startupSettingsDescription")}</DialogDescription>
+              </div>
+            </DialogHeader>
+            <div className="software-settings-page-stack">
+              <div className="software-settings-option">
+                <div>
+                  <strong>{t("softwareSettings.autostart")}</strong>
+                  <p>{t("softwareSettings.autostartDescription")}</p>
+                </div>
+                <Switch checked={autostartEnabled} onCheckedChange={(checked) => onAutostartChange(checked, checked ? startMinimized : false)} aria-label={t("softwareSettings.autostart")} />
+              </div>
+              <div className="software-settings-option">
+                <div>
+                  <strong>{t("softwareSettings.startMinimized")}</strong>
+                  <p>{t("softwareSettings.startMinimizedDescription")}</p>
+                </div>
+                <Switch
+                  checked={startMinimized}
+                  disabled={!autostartEnabled}
+                  onCheckedChange={(checked) => onAutostartChange(autostartEnabled, checked)}
+                  aria-label={t("softwareSettings.startMinimized")}
+                />
+              </div>
+            </div>
+              </motion.div>
+        ) : (
+              <motion.div
+                key="notifications"
+                className="software-settings-page"
+                variants={softwareSettingsPageVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={softwareSettingsPageTransition}
+              >
+            <DialogHeader className="software-settings-subpage-header">
+              <Button type="button" variant="ghost" size="icon-sm" className="software-settings-back-button" onClick={() => navigateToPage("root")}>
                 <ChevronLeft size={18} />
                 <span className="sr-only">{t("softwareSettings.back")}</span>
               </Button>
@@ -299,9 +420,37 @@ export function SoftwareSettingsDialog({
                 </div>
               </div>
             </div>
-          </>
-        )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </DialogContent>
     </Dialog>
   );
 }
+
+const softwareSettingsPageTransition = {
+  type: "spring" as const,
+  duration: 0.22,
+  bounce: 0,
+};
+
+const SOFTWARE_SETTINGS_DIALOG_VERTICAL_PADDING = 48;
+
+const softwareSettingsPageVariants = {
+  enter: {
+    opacity: 0,
+    y: 6,
+    scale: 0.985,
+  },
+  center: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+  },
+  exit: {
+    opacity: 0,
+    y: -4,
+    scale: 0.995,
+  },
+};
