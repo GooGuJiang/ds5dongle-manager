@@ -261,7 +261,7 @@ export function AppHeader({
     }
 
     forceCloseRef.current = true;
-    await appWindow.destroy();
+    await invoke("ds5_quit_app");
   };
 
   const requestWindowClose = () => {
@@ -283,7 +283,11 @@ export function AppHeader({
         return;
       }
 
-      void appWindow.close();
+      forceCloseRef.current = true;
+      void invoke("ds5_quit_app").catch(() => {
+        forceCloseRef.current = false;
+        void appWindow.close();
+      });
     }, CLOSE_BUTTON_SETTLE_MS);
   };
 

@@ -1,7 +1,7 @@
+use serde::Deserialize;
 use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use serde::Deserialize;
 use tauri::{menu::MenuItem, Wry};
 
 pub struct DeviceMonitorState {

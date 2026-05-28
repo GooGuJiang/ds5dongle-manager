@@ -26,7 +26,9 @@ pub fn collect_supported_devices(api: &HidApi) -> Vec<HidDeviceInfoDto> {
     let mut devices = Vec::new();
 
     for device in api.device_list() {
-        if device.vendor_id() != SONY_VENDOR_ID || !SUPPORTED_PRODUCT_IDS.contains(&device.product_id()) {
+        if device.vendor_id() != SONY_VENDOR_ID
+            || !SUPPORTED_PRODUCT_IDS.contains(&device.product_id())
+        {
             continue;
         }
 
@@ -53,7 +55,10 @@ pub fn devices_snapshot(devices: &[HidDeviceInfoDto]) -> String {
         .map(|device| {
             format!(
                 "{}:{}:{}:{}",
-                device.path, device.vendor_id, device.product_id, device.serial_number.as_deref().unwrap_or_default()
+                device.path,
+                device.vendor_id,
+                device.product_id,
+                device.serial_number.as_deref().unwrap_or_default()
             )
         })
         .collect::<Vec<_>>();

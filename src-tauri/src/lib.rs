@@ -4,35 +4,36 @@ mod hid;
 mod state;
 
 use app_config::{
-    CONTROLLER_NOTIFICATION_HEIGHT, CONTROLLER_NOTIFICATION_LABEL, CONTROLLER_NOTIFICATION_MARGIN,
-    CONTROLLER_NOTIFICATION_WIDTH, CONTROLLER_NOTIFICATION_COLLAPSED_WIDTH, TRAY_POPUP_BATTERY_HEIGHT,
-    TRAY_POPUP_LABEL, TRAY_POPUP_MIN_HEIGHT, TRAY_POPUP_WIDTH,
+    CONTROLLER_NOTIFICATION_COLLAPSED_WIDTH, CONTROLLER_NOTIFICATION_HEIGHT,
+    CONTROLLER_NOTIFICATION_LABEL, CONTROLLER_NOTIFICATION_MARGIN, CONTROLLER_NOTIFICATION_WIDTH,
+    TRAY_POPUP_BATTERY_HEIGHT, TRAY_POPUP_LABEL, TRAY_POPUP_MIN_HEIGHT, TRAY_POPUP_WIDTH,
 };
 use commands::{
-    ds5_get_software_settings,
-    ds5_get_system_info, ds5_list_devices, ds5_read_feature_report, ds5_read_input_report, ds5_send_feature_report,
-    ds5_get_autostart_enabled, ds5_get_close_to_tray, ds5_set_autostart_enabled, ds5_set_close_to_tray, ds5_start_device_monitor,
-    ds5_get_tray_batteries, ds5_hide_controller_notification, ds5_hide_tray_popup, ds5_open_main_window, ds5_quit_app,
-    ds5_get_controller_notification_sound_enabled, ds5_get_controller_notification_sound_volumes,
-    ds5_get_controller_connection_popup_enabled, ds5_get_controller_low_battery_popup_enabled,
+    ds5_get_autostart_enabled, ds5_get_close_to_tray, ds5_get_controller_connection_popup_enabled,
+    ds5_get_controller_low_battery_popup_enabled,
     ds5_get_controller_notification_popup_duration_ms,
-    ds5_get_low_battery_notification_enabled, ds5_make_controller_notification_input_safe, ds5_play_controller_notification_sound,
+    ds5_get_controller_notification_sound_enabled, ds5_get_controller_notification_sound_volumes,
+    ds5_get_low_battery_notification_enabled, ds5_get_software_settings, ds5_get_system_info,
+    ds5_get_tray_batteries, ds5_hide_controller_notification, ds5_hide_tray_popup,
+    ds5_list_devices, ds5_make_controller_notification_input_safe, ds5_open_main_window,
+    ds5_play_controller_notification_sound, ds5_quit_app, ds5_read_feature_report,
+    ds5_read_input_report, ds5_reset_controller_notification_sound_volumes,
+    ds5_send_feature_report, ds5_set_autostart_enabled, ds5_set_close_to_tray,
     ds5_set_controller_connection_popup_enabled, ds5_set_controller_low_battery_popup_enabled,
     ds5_set_controller_notification_popup_duration_ms,
-    ds5_reset_controller_notification_sound_volumes, ds5_set_controller_notification_sound_enabled,
-    ds5_set_controller_notification_sound_volume, ds5_set_low_battery_notification_enabled, ds5_show_controller_notification,
-    ds5_update_tray_batteries, ds5_update_tray_labels,
+    ds5_set_controller_notification_sound_enabled, ds5_set_controller_notification_sound_volume,
+    ds5_set_low_battery_notification_enabled, ds5_show_controller_notification,
+    ds5_start_device_monitor, ds5_update_tray_batteries, ds5_update_tray_labels,
 };
 use state::{DeviceMonitorState, TrayLabels, TrayState};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::{
-    Emitter,
     image::Image,
-    PhysicalPosition, PhysicalSize,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     window::Color,
-    Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder,
+    WindowEvent,
 };
 
 #[derive(Clone, serde::Serialize)]
@@ -56,10 +57,16 @@ pub fn run() {
             running: Arc::new(AtomicBool::new(false)),
         })
         .manage(build_tray_state())
-        .plugin(tauri_plugin_autostart::Builder::new().app_name("DS5 Dongle Manager").build())
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .app_name("DS5 Dongle Manager")
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            if let Err(error) = commands::sync_close_to_tray_state(&app.handle(), &app.state::<TrayState>()) {
+            if let Err(error) =
+                commands::sync_close_to_tray_state(&app.handle(), &app.state::<TrayState>())
+            {
                 eprintln!("failed to load software settings: {error}");
             }
 
@@ -69,12 +76,16 @@ pub fn run() {
                 }
             }
 
-            let tray_popup_builder = WebviewWindowBuilder::new(app, TRAY_POPUP_LABEL, WebviewUrl::App("/?tray=1".into()))
-                .title("DS5 Dongle Manager Tray")
-                .inner_size(TRAY_POPUP_WIDTH, TRAY_POPUP_MIN_HEIGHT)
-                .min_inner_size(TRAY_POPUP_WIDTH, TRAY_POPUP_MIN_HEIGHT)
-                .max_inner_size(TRAY_POPUP_WIDTH, TRAY_POPUP_BATTERY_HEIGHT)
-                .decorations(false);
+            let tray_popup_builder = WebviewWindowBuilder::new(
+                app,
+                TRAY_POPUP_LABEL,
+                WebviewUrl::App("/?tray=1".into()),
+            )
+            .title("DS5 Dongle Manager Tray")
+            .inner_size(TRAY_POPUP_WIDTH, TRAY_POPUP_MIN_HEIGHT)
+            .min_inner_size(TRAY_POPUP_WIDTH, TRAY_POPUP_MIN_HEIGHT)
+            .max_inner_size(TRAY_POPUP_WIDTH, TRAY_POPUP_BATTERY_HEIGHT)
+            .decorations(false);
 
             #[cfg(not(target_os = "macos"))]
             let tray_popup_builder = tray_popup_builder.transparent(true);
@@ -91,11 +102,20 @@ pub fn run() {
                 CONTROLLER_NOTIFICATION_LABEL,
                 WebviewUrl::App("/?controllerNotification=1".into()),
             )
-                .title("DS5 Dongle Manager Controller Notification")
-                .inner_size(CONTROLLER_NOTIFICATION_COLLAPSED_WIDTH, CONTROLLER_NOTIFICATION_HEIGHT)
-                .min_inner_size(CONTROLLER_NOTIFICATION_COLLAPSED_WIDTH, CONTROLLER_NOTIFICATION_HEIGHT)
-                .max_inner_size(CONTROLLER_NOTIFICATION_WIDTH, CONTROLLER_NOTIFICATION_HEIGHT)
-                .decorations(false);
+            .title("DS5 Dongle Manager Controller Notification")
+            .inner_size(
+                CONTROLLER_NOTIFICATION_COLLAPSED_WIDTH,
+                CONTROLLER_NOTIFICATION_HEIGHT,
+            )
+            .min_inner_size(
+                CONTROLLER_NOTIFICATION_COLLAPSED_WIDTH,
+                CONTROLLER_NOTIFICATION_HEIGHT,
+            )
+            .max_inner_size(
+                CONTROLLER_NOTIFICATION_WIDTH,
+                CONTROLLER_NOTIFICATION_HEIGHT,
+            )
+            .decorations(false);
 
             #[cfg(not(target_os = "macos"))]
             let controller_notification_builder = controller_notification_builder.transparent(true);
@@ -160,11 +180,26 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let app = window.app_handle();
                 let state = app.state::<TrayState>();
-                let close_to_tray = state.close_to_tray.lock().map(|value| *value).unwrap_or(false);
+                let close_to_tray = state
+                    .close_to_tray
+                    .lock()
+                    .map(|value| *value)
+                    .unwrap_or(false);
+                let close_to_tray_asked = state
+                    .close_to_tray_asked
+                    .lock()
+                    .map(|value| *value)
+                    .unwrap_or(false);
 
                 if close_to_tray {
                     api.prevent_close();
                     let _ = window.hide();
+                    return;
+                }
+
+                if close_to_tray_asked {
+                    api.prevent_close();
+                    app.exit(0);
                 }
             }
         })
@@ -275,14 +310,16 @@ pub fn make_controller_notification_input_safe(app: &tauri::AppHandle) -> Result
 }
 
 #[cfg(target_os = "windows")]
-fn apply_windows_no_input_styles(window: &tauri::WebviewWindow) -> Result<(), Box<dyn std::error::Error>> {
+fn apply_windows_no_input_styles(
+    window: &tauri::WebviewWindow,
+) -> Result<(), Box<dyn std::error::Error>> {
     use windows::Win32::Graphics::Dwm::{
         DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMWA_NCRENDERING_POLICY,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST, SWP_NOACTIVATE,
-        SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-        WS_EX_TRANSPARENT,
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+        WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
     };
 
     let hwnd = window.hwnd()?;
@@ -319,7 +356,10 @@ fn apply_windows_no_input_styles(window: &tauri::WebviewWindow) -> Result<(), Bo
     Ok(())
 }
 
-pub fn show_controller_notification(app: &tauri::AppHandle, payload: ControllerNotificationPayload) {
+pub fn show_controller_notification(
+    app: &tauri::AppHandle,
+    payload: ControllerNotificationPayload,
+) {
     let Some(window) = app.get_webview_window(CONTROLLER_NOTIFICATION_LABEL) else {
         return;
     };
@@ -343,7 +383,8 @@ pub fn show_controller_notification(app: &tauri::AppHandle, payload: ControllerN
             )
         });
 
-    let (left, top, right, _bottom, scale_factor) = monitor_rect.unwrap_or((0.0, 0.0, 1920.0, 1080.0, 1.0));
+    let (left, top, right, _bottom, scale_factor) =
+        monitor_rect.unwrap_or((0.0, 0.0, 1920.0, 1080.0, 1.0));
     let notification_height = CONTROLLER_NOTIFICATION_HEIGHT * scale_factor;
     let collapsed_width = CONTROLLER_NOTIFICATION_COLLAPSED_WIDTH * scale_factor;
     let margin = CONTROLLER_NOTIFICATION_MARGIN * scale_factor;
@@ -401,22 +442,19 @@ fn show_tray_popup(app: &tauri::AppHandle, tray_position: PhysicalPosition<f64>)
             })
         })
         .or_else(|| {
-            window
-                .current_monitor()
-                .ok()
-                .flatten()
-                .map(|monitor| {
-                    let position = monitor.position();
-                    let size = monitor.size();
-                    let left = position.x as f64;
-                    let top = position.y as f64;
-                    let right = left + size.width as f64;
-                    let bottom = top + size.height as f64;
-                    (left, top, right, bottom, monitor.scale_factor())
-                })
+            window.current_monitor().ok().flatten().map(|monitor| {
+                let position = monitor.position();
+                let size = monitor.size();
+                let left = position.x as f64;
+                let top = position.y as f64;
+                let right = left + size.width as f64;
+                let bottom = top + size.height as f64;
+                (left, top, right, bottom, monitor.scale_factor())
+            })
         });
 
-    let (left, top, right, bottom, scale_factor) = monitor_rect.unwrap_or((0.0, 0.0, 1920.0, 1080.0, 1.0));
+    let (left, top, right, bottom, scale_factor) =
+        monitor_rect.unwrap_or((0.0, 0.0, 1920.0, 1080.0, 1.0));
     let popup_height_base = tray_popup_height(app);
     let popup_width = TRAY_POPUP_WIDTH * scale_factor;
     let popup_height = popup_height_base * scale_factor;
@@ -438,7 +476,10 @@ fn show_tray_popup(app: &tauri::AppHandle, tray_position: PhysicalPosition<f64>)
         y = bottom - popup_height - margin;
     }
 
-    let _ = window.set_size(PhysicalSize::new(popup_width.round().max(1.0) as u32, popup_height.round().max(1.0) as u32));
+    let _ = window.set_size(PhysicalSize::new(
+        popup_width.round().max(1.0) as u32,
+        popup_height.round().max(1.0) as u32,
+    ));
     let _ = window.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
     let _ = window.show();
     let _ = window.set_focus();
